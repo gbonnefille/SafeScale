@@ -1015,9 +1015,9 @@ func (s stack) DeleteHost(hostParam stacks.HostParameter) fail.Error {
 		return fail.Wrap(xerr, "failed to get the volumes from the domain")
 	}
 
-	isActive, err := domain.IsActive()
-	if err != nil {
-		return fail.Wrap(err, "failed to know if the domain is active")
+	isActive, ferr := domain.IsActive()
+	if ferr != nil {
+		return fail.Wrap(ferr, "failed to know if the domain is active")
 	}
 
 	if !isActive {
