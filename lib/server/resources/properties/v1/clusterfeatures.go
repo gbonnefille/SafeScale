@@ -28,8 +28,8 @@ import (
 // Note: if tagged as FROZEN, must not be changed ever.
 //       Create a new version instead with needed supplemental/overriding fields
 type ClusterInstalledFeature struct {
-	RequiredBy []string `json:"required_by,omitempty"` // tells what feature(s) needs this one
-	Requires   []string `json:"requires,omitempty"`
+	RequiredBy map[string]struct{} `json:"required_by,omitempty"` // tells what feature(s) needs this one
+	Requires   map[string]struct{} `json:"requires,omitempty"`
 
 	properties.Depreciation `json:"deprecated,omitempty"`
 }
