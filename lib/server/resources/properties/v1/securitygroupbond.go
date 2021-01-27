@@ -17,6 +17,7 @@
 package propertiesv1
 
 import (
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 )
 
@@ -26,6 +27,8 @@ type SecurityGroupBond struct {
 	ID         string `json:"id"`
 	Disabled   bool   `json:"disabled"`
 	FromSubnet bool   `json:"from_subnet"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewSecurityGroupBond ...

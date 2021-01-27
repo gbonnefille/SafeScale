@@ -19,6 +19,7 @@ package propertiesv1
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/abstract"
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -35,6 +36,9 @@ type ClusterDefaults struct {
 	NodeSizing abstract.HostEffectiveSizing `json:"node_sizing"`
 	// Image keeps the default Linux image to use
 	Image string `json:"image"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
+
 }
 
 func newClusterDefaults() *ClusterDefaults {

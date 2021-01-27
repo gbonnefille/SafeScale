@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/securitygroupproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -30,6 +31,8 @@ type SecurityGroupSubnets struct {
 	DefaultFor string                        `json:"default_for,omitempty"` // contains the ID of the subnet for which the Security Group is default
 	ByID       map[string]*SecurityGroupBond `json:"by_id"`                 // contains the bonds of a Security Group with Subnets using it, indexed on Subnets' ID
 	ByName     map[string]string             `json:"by_name"`               // contains the Subnets' ID indexed on Subnets' Name
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewSecurityGroupSubnets ...

@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/subnetproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -26,6 +27,8 @@ import (
 type SubnetHosts struct {
 	ByID   map[string]string `json:"by_id"`   // list of host names, indexed by host id
 	ByName map[string]string `json:"by_name"` // list of host IDs, indexed by host name
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewSubnetHosts ...

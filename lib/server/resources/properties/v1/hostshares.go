@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -86,6 +87,8 @@ func (hs *HostShare) Replace(p data.Clonable) data.Clonable {
 type HostShares struct {
 	ByID   map[string]*HostShare `json:"by_id"`
 	ByName map[string]string     `json:"by_name"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewHostShares ...

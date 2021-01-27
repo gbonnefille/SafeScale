@@ -21,6 +21,7 @@ import (
 
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterstate"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -31,6 +32,8 @@ type ClusterState struct {
 	State clusterstate.Enum
 	// StateCollectInterval in seconds
 	StateCollectInterval time.Duration `json:"state_collect_interval,omitempty"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 func newClusterState() *ClusterState {

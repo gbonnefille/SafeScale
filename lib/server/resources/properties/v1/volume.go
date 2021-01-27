@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/volumeproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -33,6 +34,8 @@ type VolumeDescription struct {
 	Purpose string
 	// Created contains the time of creation of the volume
 	Created time.Time
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewVolumeDescription ...

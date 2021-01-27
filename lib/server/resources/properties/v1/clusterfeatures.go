@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -27,8 +28,10 @@ import (
 // Note: if tagged as FROZEN, must not be changed ever.
 //       Create a new version instead with needed supplemental/overriding fields
 type ClusterInstalledFeature struct {
-	RequiredBy map[string]struct{} `json:"required_by,omitempty"` // tells what feature(s) needs this one
-	Requires   map[string]struct{} `json:"requires,omitempty"`
+	RequiredBy []string `json:"required_by,omitempty"` // tells what feature(s) needs this one
+	Requires   []string `json:"requires,omitempty"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewClusterInstalledFeature ...

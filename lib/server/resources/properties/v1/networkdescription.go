@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/networkproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -32,6 +33,8 @@ type NetworkDescription struct {
 	Purpose string    `json:"purpose,omitempty"` // contains the purpose of this network
 	Created time.Time `json:"created,omitempty"` // Contains the date of creation of the network
 	Domain  string    `json:"domain,omitempty"`  // Deprecated (moved to SubnetDescription): defines the domain to use for host FQDN in this network
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewNetworkDescription ...

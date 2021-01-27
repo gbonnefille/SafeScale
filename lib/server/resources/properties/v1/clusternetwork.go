@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -31,6 +32,8 @@ type ClusterNetwork struct {
 	GatewayIP string `json:"gateway_ip"` // DEPRECATED
 	PublicIP  string `json:"public_ip"`  // DEPRECATED
 	CIDR      string `json:"cidr"`       // the network CIDR
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 func newClusterNetwork() *ClusterNetwork {

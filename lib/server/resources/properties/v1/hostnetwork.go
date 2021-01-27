@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -37,6 +38,8 @@ type HostNetwork struct {
 	PublicIPv6              string            `json:"public_ip_v6,omitempty"`               // contains the public IPv6 address of the host
 	IPv4Addresses           map[string]string `json:"ipv4_addresses,omitempty"`             // contains ipv4 (indexed by Networking ID) allocated to the host
 	IPv6Addresses           map[string]string `json:"ipv6_addresses,omitempty"`             // contains ipv6 (indexed by Networking ID) allocated to the host
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewHostNetwork ...

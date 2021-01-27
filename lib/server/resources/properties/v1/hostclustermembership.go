@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -29,6 +30,8 @@ import (
 type HostClusterMembership struct {
 	Cluster string `json:"cluster,omitempty"`   // Cluster is the name of the cluster the host is member of
 	Type    string `json:"node_type,omitempty"` // Tells if host is "node", "master" or "gateway"
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewHostClusterMembership ...

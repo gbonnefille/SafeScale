@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -26,6 +27,8 @@ import (
 type ClusterComposite struct {
 	// Array of tenants hosting a multi-tenant cluster (multi starting from 1)
 	Tenants []string `json:"tenants"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 func newClusterComposite() *ClusterComposite {

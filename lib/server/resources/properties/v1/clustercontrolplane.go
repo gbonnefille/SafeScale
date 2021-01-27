@@ -19,6 +19,7 @@ package propertiesv1
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/abstract"
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -29,6 +30,8 @@ import (
 //       Create a new version instead with needed supplemental fields
 type ClusterControlplane struct {
 	VirtualIP *abstract.VirtualIP `json:"virtual_ip"` // contains the VirtualIP used to contact the control plane when HA is enabled
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 func newClusterControlPlane() *ClusterControlplane {

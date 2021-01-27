@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -81,6 +82,8 @@ func (hif *HostInstalledFeature) Replace(p data.Clonable) data.Clonable {
 //       Create a new version instead with needed supplemental fields
 type HostFeatures struct {
 	Installed map[string]*HostInstalledFeature `json:"installed,omitempty"` // list of installed features, indexed on feature name
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewHostFeatures ...

@@ -17,6 +17,9 @@
 package propertiesv1
 
 import (
+	"github.com/CS-SI/SafeScale/lib/server/resources/enums/subnetproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
+
 	"time"
 
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/subnetproperty"
@@ -33,6 +36,8 @@ type SubnetDescription struct {
 	Purpose string    `json:"purpose,omitempty"` // contains the purpose of this network
 	Created time.Time `json:"created,omitempty"` // Contains the date of creation if the network
 	Domain  string    `json:"domain,omitempty"`  // Defines the domain to use for host FQDN in this network
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewSubnetDescription ...

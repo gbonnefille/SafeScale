@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/networkproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -29,6 +30,8 @@ import (
 type NetworkSubnets struct {
 	ByID   map[string]string `json:"by_id,omitempty"`   // contains a list of subnet names indexed by id
 	ByName map[string]string `json:"by_name,omitempty"` // contains a list of subnet ids index by name
+
+	properties.Depreciation `json:"deprecated,omitempty"` `json:"deprecated,omitemptuy"`
 }
 
 // NewNetworkSubnets ...

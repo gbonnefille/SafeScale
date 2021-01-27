@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -31,6 +32,8 @@ type HostSystem struct {
 	Flavor   string `json:"flavor,omitempty"`   // Flavor of operating system (ie 'ubuntu server', 'windows server 2016', ... Not normalized yet...)
 	Image    string `json:"image,omitempty"`    // name of the provider's image used
 	HostName string `json:"hostname,omitempty"` // Hostname on the system
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewHostSystem ...

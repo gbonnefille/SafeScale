@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -38,6 +39,8 @@ type ClusterNodes struct {
 	MasterLastIndex  int            `json:"master_last_index"`       // MasterLastIndex
 	PrivateLastIndex int            `json:"private_last_index"`      // PrivateLastIndex
 	PublicLastIndex  int            `json:"public_last_index"`       // PublicLastIndex
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 func newClusterNodes() *ClusterNodes {

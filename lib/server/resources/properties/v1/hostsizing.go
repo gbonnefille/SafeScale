@@ -18,6 +18,7 @@ package propertiesv1
 
 import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
+	"github.com/CS-SI/SafeScale/lib/server/resources/properties"
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/serialize"
 )
@@ -68,6 +69,8 @@ type HostSizing struct {
 	RequestedSize *HostSizingRequirements `json:"requested_size,omitempty"`
 	Template      string                  `json:"template,omitempty"`
 	AllocatedSize *HostEffectiveSizing    `json:"allocated_size,omitempty"`
+
+	properties.Depreciation `json:"deprecated,omitempty"`
 }
 
 // NewHostSizing ...
