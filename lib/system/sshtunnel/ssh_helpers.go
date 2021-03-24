@@ -41,7 +41,7 @@ func RunCommandInSSHSessionWithTimeout(se *ssh.Session, cmd string, timeout time
 		resChan <- result{
 			resErr: theErr,
 		}
-		return //nolint
+		return
 	}()
 
 	if timeout != 0 {
@@ -57,8 +57,10 @@ func RunCommandInSSHSessionWithTimeout(se *ssh.Session, cmd string, timeout time
 		}
 	}
 
-	res := <-resChan
-	return res.resErr
+	select {
+	case res := <-resChan:
+		return res.resErr
+	}
 }
 
 func DialSSHWithTimeout(network, addr string, config *ssh.ClientConfig, timeout time.Duration) (
@@ -79,7 +81,7 @@ func DialSSHWithTimeout(network, addr string, config *ssh.ClientConfig, timeout 
 			resCli: theCli,
 			resErr: theErr,
 		}
-		return //nolint
+		return
 	}()
 
 	if timeout != 0 {
@@ -95,8 +97,10 @@ func DialSSHWithTimeout(network, addr string, config *ssh.ClientConfig, timeout 
 		}
 	}
 
-	res := <-resChan
-	return res.resCli, res.resErr
+	select {
+	case res := <-resChan:
+		return res.resCli, res.resErr
+	}
 }
 
 func sshDial(network, addr string, config *ssh.ClientConfig) (_ *ssh.Client, err error) {

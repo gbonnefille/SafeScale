@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -64,17 +65,19 @@ func convertErrorToTunnelError(inErr error) (err error) {
 		}
 	}
 
+	/*
+		if isHandshakeErrorWithEOF(inErr) {
+			return tunnelError{
+				error:       inErr,
+				isTimeout:   false,
+				isTemporary: false,
+			}
+		}
+	*/
+
 	if isHandshakeError(inErr) {
 		return tunnelError{
 			error:       inErr,
-			isTimeout:   false,
-			isTemporary: true,
-		}
-	}
-
-	if isConnectionResetByPeer(inErr) {
-		return tunnelError{
-			error:       nil,
 			isTimeout:   false,
 			isTemporary: true,
 		}
@@ -247,6 +250,20 @@ func isHandshakeError(err error) bool {
 	return false
 }
 
+func isHandshakeErrorWithEOF(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	err = lastUnwrap(err)
+
+	if reflect.ValueOf(err).Kind() == reflect.ValueOf("").Kind() { // if it's just a string we are forced to check the content
+		return strings.Contains(err.Error(), "handshake failed") && strings.Contains(err.Error(), "EOF")
+	}
+
+	return false
+}
+
 func isConnectionResetByPeer(err error) bool {
 	if err == nil {
 		return false
@@ -300,6 +317,7 @@ func isErrorAddressAlreadyInUse(err error) bool {
 	if !ok {
 		return false
 	}
+
 	errSyscallError, ok := errOpError.Err.(*os.SyscallError)
 	if !ok {
 		return false
@@ -315,7 +333,13 @@ func isErrorAddressAlreadyInUse(err error) bool {
 	if !ok {
 		return false
 	}
+
 	if errErrno == syscall.EADDRINUSE {
+		return true
+	}
+
+	const WSAEADDRINUSE = 10048
+	if runtime.GOOS == "windows" && errErrno == WSAEADDRINUSE {
 		return true
 	}
 

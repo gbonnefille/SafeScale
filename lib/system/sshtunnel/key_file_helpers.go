@@ -54,6 +54,7 @@ func convertToSSHClientConfig(toConvert *SSHJump, timeout time.Duration) (_ *ssh
 	return config, nil
 }
 
+// AuthMethodFromPrivateKeyFile gets authentication method from a private key stored on file 'file' encrypted with 'passphrase'
 func AuthMethodFromPrivateKeyFile(file string, passphrase []byte) (_ ssh.AuthMethod, err error) {
 	defer OnPanic(&err)
 
@@ -65,12 +66,18 @@ func AuthMethodFromPrivateKeyFile(file string, passphrase []byte) (_ ssh.AuthMet
 	return AuthMethodFromPrivateKey(buffer, passphrase)
 }
 
+// AuthMethodFromPassword gets authentication method from a password 'pass'
+func AuthMethodFromPassword(pass string) (_ ssh.AuthMethod, err error) {
+	return ssh.Password(pass), nil
+}
+
+// AuthMethodFromPrivateKey gets authentication method from a private key 'buffer' encrypted with 'passphrase'
 func AuthMethodFromPrivateKey(buffer []byte, passphrase []byte) (_ ssh.AuthMethod, err error) {
 	defer OnPanic(&err)
 
 	var signer ssh.Signer
 
-	if len(passphrase) != 0 {
+	if passphrase != nil && len(passphrase) != 0 {
 		signer, err = ssh.ParsePrivateKeyWithPassphrase(buffer, passphrase)
 	} else {
 		signer, err = ssh.ParsePrivateKey(buffer)
@@ -83,7 +90,7 @@ func AuthMethodFromPrivateKey(buffer []byte, passphrase []byte) (_ ssh.AuthMetho
 	return ssh.PublicKeys(signer), nil
 }
 
-// GenerateRSAKeyPair creates a key pair
+// GenerateRSAKeyPair creates a key pair with length 'keylen'
 func GenerateRSAKeyPair(keylen int) (privKey string, pubKey string, err error) {
 	defer OnPanic(&err)
 
@@ -112,9 +119,8 @@ func GenerateRSAKeyPair(keylen int) (privKey string, pubKey string, err error) {
 	return string(priKeyPem), string(pubBytes), nil
 }
 
-// FIXME: Add UT, remove nolint
 // writePemToFile writes keys to a file
-func writeKeyToFile(keyBytes []byte, saveFileTo string) (err error) { //nolint
+func writeKeyToFile(keyBytes []byte, saveFileTo string) (err error) {
 	defer OnPanic(&err)
 
 	err = ioutil.WriteFile(saveFileTo, keyBytes, 0600)
@@ -125,9 +131,7 @@ func writeKeyToFile(keyBytes []byte, saveFileTo string) (err error) { //nolint
 	return nil
 }
 
-// FIXME: Add UT, remove nolint
-// getHostKey retrieves a key on unix systems
-func getHostKey(host string) (_ ssh.PublicKey, err error) { //nolint
+func getHostKeyFromKnownHostsInLinuxSystems(host string) (_ ssh.PublicKey, err error) {
 	defer OnPanic(&err)
 
 	// parse OpenSSH known_hosts file

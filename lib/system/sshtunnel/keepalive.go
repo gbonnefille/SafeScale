@@ -39,7 +39,7 @@ func newDefaultKeepAliveCfg() *keepAliveCfg {
 	return newKeepAliveCfg(7200, 75, 9)
 }
 
-func newKeepAliveCfgFromSystem() *keepAliveCfg { //nolint
+func newKeepAliveCfgFromSystem() *keepAliveCfg {
 	ka := newDefaultKeepAliveCfg()
 	ka.readFromCfg()
 	return ka
@@ -65,9 +65,9 @@ func readIntFromFile(name string) (uint, error) {
 	if len(theLines) == 0 {
 		return 0, fmt.Errorf("error: empty file")
 	}
-	theIP := strings.TrimSpace(theLines[0])
+	theIp := strings.TrimSpace(theLines[0])
 
-	theNum, err := strconv.Atoi(theIP)
+	theNum, err := strconv.Atoi(theIp)
 	return uint(theNum), err
 }
 
