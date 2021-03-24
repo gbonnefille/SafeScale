@@ -1,3 +1,5 @@
+// +build alltests
+
 /*
  * Copyright 2018-2021, CS Systemes d'Information, http://csgroup.eu
  *
@@ -14,9 +16,18 @@
  * limitations under the License.
  */
 
-// +build alltests
-
 package serialize
+
+import (
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/CS-SI/SafeScale/lib/utils/concurrency"
+	"github.com/CS-SI/SafeScale/lib/utils/data"
+	"github.com/CS-SI/SafeScale/lib/utils/fail"
+	"github.com/stretchr/testify/assert"
+)
 
 func TestNestedLocksWithWritesDanger(t *testing.T) {
 	PropertyTypeRegistry.Register("clusters", "first", &LikeFeatures{})
