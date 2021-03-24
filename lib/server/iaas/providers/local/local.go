@@ -121,12 +121,6 @@ type CfgOptions struct {
 	URI string
 }
 
-// &stacks.ConfigurationOptions{
-// 	ProviderNetwork:           "safescale", //at least for qemu / KVM
-// 	AutoHostNetworkInterfaces: false,
-// 	UseLayer3Networking:       false,
-// }
-
 // Build Create and initialize a ClientAPI
 // Can be called from nil
 func (p *provider) Build(params map[string]interface{}) (providers.Provider, error) {

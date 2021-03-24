@@ -535,7 +535,7 @@ func (w *worker) Proceed(ctx context.Context, v data.Map, s resources.FeatureSet
 			return nil, fail.Wrap(xerr, "failed to set security rules on Subnet")
 		}
 	case installaction.Remove:
-		// FIXME: Uncomplete ??
+		// FIXME: Incomplete ??
 		// if !s.SkipProxy {
 		// 	rgw, xerr := w.identifyAvailableGateway()
 		// 	if xerr == nil {
@@ -1429,7 +1429,7 @@ func (w *worker) setNetworkingSecurity(ctx context.Context) (xerr fail.Error) {
 		}
 	}
 
-	// VPL: for the future ? For now, targets == gateways only supported...
+	// FIXME: VPL: for the future ? For now, targets == gateways only supported...
 	// hosts, xerr := w.identifyHosts(targets)
 	// if xerr != nil {
 	// 	return fail.Wrap(xerr, "failed to apply proxy rules: %s")

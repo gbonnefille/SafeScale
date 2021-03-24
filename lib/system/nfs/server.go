@@ -63,6 +63,7 @@ func (s *Server) AddShare(ctx context.Context, path string, options string /*sec
 		return fail.Wrap(xerr, "failed to create the share")
 	}
 
+	// FIXME: Future ?
 	// acl := ExportACL{
 	// 	IPAddress:          "*",
 	// 	SecurityModes: []securityflavor.Enum{},

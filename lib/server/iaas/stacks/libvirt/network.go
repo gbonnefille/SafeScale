@@ -321,56 +321,6 @@ func (s stack) DeleteNetwork(ref string) fail.Error {
 	return nil
 }
 
-// // CreateGateway creates a public Gateway for a private network
-// func (s *stack) CreateGateway(req abstract.GatewayRequest) (*abstract.HostFull, *abstract.HostTemplate, *userdata.Content, error) {
-// 	if s == nil {
-// 		return nil, nil, nil, fail.InvalidInstanceError()
-// 	}
-//
-// 	defer debug.NewTracer(nil, "", true).Entering().Exiting()
-//
-// 	network := req.Networking
-// 	templateID := req.TemplateID
-// 	imageID := req.ImageID
-// 	keyPair := req.KeyPair
-// 	gwName := req.Name
-//
-// 	networkLibvirt, err := getNetworkFromRef(network.ID, s.LibvirtService)
-// 	if err != nil {
-// 		return nil, nil, err
-// 	}
-// 	if gwName == "" {
-// 		name, err := networkLibvirt.Name()
-// 		if err != nil {
-// 			return nil, nil, fail.Wrap(err, "failed to get network name")
-// 		}
-// 		gwName = "gw-" + name
-// 	}
-//
-// 	hostReq := abstract.HostRequest{
-// 		ImageID:      imageID,
-// 		KeyPair:      keyPair,
-// 		ResourceName: gwName,
-// 		TemplateID:   templateID,
-// 		Networks:     []*abstract.Networking{network},
-// 		PublicIP:     true,
-// 	}
-//
-// 	host, userData, err := s.CreateHost(hostReq)
-// 	if err != nil {
-// 		return nil, nil, fail.Wrap(err, "failed to create gateway host")
-// 	}
-//
-// 	return host, userData, nil
-// }
-//
-// // DeleteGateway delete the public gateway referenced by ref (id or name)
-// func (s *stack) DeleteGateway(ref string) error {
-// 	defer debug.NewTracer(nil, "", true).Entering().Exiting()
-//
-// 	return s.DeleteHost(ref)
-// }
-
 // CreateVIP creates a private virtual IP
 // If public is set to true,
 func (s stack) CreateVIP(networkID, subnetID, name string, securityGroups []string) (*abstract.VirtualIP, fail.Error) {

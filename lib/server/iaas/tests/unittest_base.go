@@ -507,35 +507,9 @@ func (tester *ServiceTester) Hosts(t *testing.T) {
 		_ = tester.Service.DeleteHost(host1.Core.ID)
 	}()
 
-	// ssh, err := tester.Service.GetSSHConfig(host.ID)
-	// _, err = ssh.WaitServerReady(userdata.PHASE1_INIT, 1 * time.Minute)
-	// assert.NoError(t, err)
-	// cmd, err := ssh.NewCommand("whoami")
-	// assert.Nil(t, err)
-	// out, err := cmd.Output()
-	// assert.Nil(t, err)
-	// content := strings.Trim(string(out), "\n")
-	// assert.Equal(t, abstract.DefaultUser, content)
-
-	// cmd, err = ssh.NewCommand("ping -c1 8.8.8.8")
-	// fmt.Println(ssh.PrivateKey)
-	// assert.Nil(t, err)
-	// _, _, _, err = cmd.Run()
-	// assert.Nil(t, err)
-
-	// cmd, err = ssh.NewCommand("ping -c1 www.google.fr")
-	// fmt.Println(ssh.PrivateKey)
-	// assert.Nil(t, err)
-	// _, _, _, err = cmd.Run()
-	// assert.Nil(t, err)
-
 	_, _, err = tester.CreateHost(t, "host2", subnet, false)
 	assert.Error(t, err)
-	// err = tester.CreateGW(t, network)
-	// assert.NoError(t, err)
-	// defer func() {
-	// 	_ = tester.Service.DeleteGateway(network.GatewayID)
-	// }()
+
 	host2, _, err := tester.CreateHost(t, "host2", subnet, false)
 	assert.NoError(t, err)
 	defer func() {
@@ -773,48 +747,3 @@ func (tester *ServiceTester) Buckets(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotContains(t, cl, "testC", "testC2")
 }
-
-// TODO: disabled, need overhaul
-// // Objects test
-// func (tester *ServiceTester) Objects(t *testing.T) {
-// 	_, err := tester.Service.CreateBucket("testC")
-// 	assert.Nil(t, err)
-// 	_, err = tester.Service.WriteObject("testC", "object1", strings.NewReader("123456789"), 0, objectstorage.ObjectMetadata{"A": "B"})
-// 	assert.Nil(t, err)
-
-// 	var buff bytes.Buffer
-// 	err = tester.Service.ReadObject("testC", "object1", buff, 0, 0)
-// 	sc := buff.String()
-// 	assert.Equal(t, "123456789", sc)
-// 	assert.Equal(t, 1, len(o.Metadata))
-// 	assert.Equal(t, "B", o.Metadata["A"])
-
-// 	o, err = tester.Service.GetObjectMetadata("testC", "object1")
-// 	assert.Empty(t, o.Content)
-// 	assert.Equal(t, 1, len(o.Metadata))
-// 	assert.Equal(t, "B", o.Metadata["A"])
-// 	o, err = tester.Service.GetObject("testC", "object1", []abstract.Range{
-// 		abstract.NewRange(0, 2),
-// 		abstract.NewRange(4, 7),
-// 	})
-// 	assert.Nil(t, err)
-// 	if err == nil {
-// 		buff.Reset()
-// 		_, err = buff.ReadFrom(o.Content)
-// 		assert.Nil(t, err)
-// 		sc = buff.String()
-// 		assert.Equal(t, "1235678", sc)
-// 	}
-
-// 	assert.Nil(t, err)
-// 	time.Sleep(5 * time.Second)
-// 	_, err = tester.Service.GetObject("testC", "object1", nil)
-// 	assert.NotNil(t, err)
-
-// 	err = tester.Service.DeleteObject("testC", "object1")
-// 	assert.NotNil(t, err)
-// 	err = tester.Service.DeleteBucket("testC")
-// 	assert.Nil(t, err)
-// }
-
-// TODO: Implement missing methods here (Look at TODO: Implement Test)

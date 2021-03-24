@@ -86,20 +86,6 @@ func Test_CreateKeyPair(t *testing.T) {
 	tt.CreateKeyPair(t)
 }
 
-// Not implemented
-// func Test_GetKeyPair(t *testing.T) {
-// 	tt, err := getTester()
-// 	require.Nil(t, err)
-// 	tt.InspectKeyPair(t)
-// }
-
-// Not implemented
-// func Test_ListKeyPairs(t *testing.T) {
-// 	tt, err := getTester()
-// 	require.Nil(t, err)
-// 	tt.ListKeyPairs(t)
-// }
-
 func Test_Networks(t *testing.T) {
 	tt, err := getTester()
 	if err != nil {
@@ -144,15 +130,3 @@ func Test_VolumeAttachment(t *testing.T) {
 	require.Nil(t, err)
 	tt.VolumeAttachment(t)
 }
-
-// func Test_Containers(t *testing.T) {
-// 	tt, err := getTester()
-// 	require.Nil(t, err)
-// 	tt.Buckets(t)
-// }
-
-// func Test_Objects(t *testing.T) {
-// 	tt, err := getTester()
-// 	require.Nil(t, err)
-// 	tt.Objects(t)
-// }

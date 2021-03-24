@@ -282,17 +282,6 @@ func (t *task) GetID() (string, fail.Error) {
 	return t.id, nil
 }
 
-// // MustGetSignature builds the "signature" of the task passed as parameter,
-// // ie a string representation of the task ID in the format "{task <id>}".
-// func (t *task) MustGetSignature() (string, fail.Error) {
-// 	if t.isNull() {
-// 		return "", fail.InvalidInstanceError()
-// 	}
-//
-// 	theId, _ := t.GetID()
-// 	return fmt.Sprintf("{task %s}", theId), nil
-// }
-
 // GetSignature builds the "signature" of the task passed as parameter,
 // ie a string representation of the task ID in the format "{task <id>}".
 func (t *task) GetSignature() string {
