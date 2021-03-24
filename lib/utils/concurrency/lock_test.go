@@ -1,5 +1,3 @@
-// +build ignore
-
 /*
  * Copyright 2018-2021, CS Systemes d'Information, http://csgroup.eu
  *
@@ -15,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// +build ignore
 
 package concurrency
 
