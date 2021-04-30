@@ -130,19 +130,7 @@ func LoadCluster(svc iaas.Service, name string) (rc resources.Cluster, xerr fail
 			}
 
 			// deal with legacy
-			xerr = rc.(*cluster).updateClusterNodesPropertyIfNeeded()
-			xerr = debug.InjectPlannedFail(xerr)
-			if xerr != nil {
-				return nullCluster(), xerr
-			}
-
-			xerr = rc.(*cluster).updateClusterNetworkPropertyIfNeeded()
-			xerr = debug.InjectPlannedFail(xerr)
-			if xerr != nil {
-				return nullCluster(), xerr
-			}
-
-			xerr = rc.(*cluster).updateClusterDefaultsPropertyIfNeeded()
+			xerr = rc.(*cluster).upgradeMetadataIfNeeded()
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {
 				return nullCluster(), xerr
@@ -173,8 +161,31 @@ func LoadCluster(svc iaas.Service, name string) (rc resources.Cluster, xerr fail
 	return rc, nil
 }
 
-// updateClusterNodesPropertyIfNeeded upgrades current Nodes property to last Nodes property (currently NodesV2)
-func (instance *cluster) updateClusterNodesPropertyIfNeeded() fail.Error {
+// upgradeMetadataIfNeeded updates the metadata of an existing Cluster
+func (instance *cluster) upgradeMetadataIfNeeded() fail.Error {
+	xerr := instance.upgradeClusterNodesPropertyIfNeeded()
+	xerr = debug.InjectPlannedFail(xerr)
+	if xerr != nil {
+		return xerr
+	}
+
+	xerr = instance.upgradeClusterNetworkPropertyIfNeeded()
+	xerr = debug.InjectPlannedFail(xerr)
+	if xerr != nil {
+		return xerr
+	}
+
+	xerr = instance.upgradeClusterDefaultsPropertyIfNeeded()
+	xerr = debug.InjectPlannedFail(xerr)
+	if xerr != nil {
+		return xerr
+	}
+
+	return nil
+}
+
+// upgradeClusterNodesPropertyIfNeeded upgrades current Nodes property to last Nodes property (currently NodesV2)
+func (instance *cluster) upgradeClusterNodesPropertyIfNeeded() fail.Error {
 	if instance.isNull() {
 		return fail.InvalidInstanceError()
 	}
@@ -299,8 +310,8 @@ func (instance *cluster) updateClusterNodesPropertyIfNeeded() fail.Error {
 	return xerr
 }
 
-// updateClusterNetworkPropertyIfNeeded creates a clusterproperty.NetworkV3 property if previous versions are found
-func (instance *cluster) updateClusterNetworkPropertyIfNeeded() fail.Error {
+// upgradeClusterNetworkPropertyIfNeeded creates a clusterproperty.NetworkV3 property if previous versions are found
+func (instance *cluster) upgradeClusterNetworkPropertyIfNeeded() fail.Error {
 	if instance.isNull() {
 		return fail.InvalidInstanceError()
 	}
@@ -388,8 +399,8 @@ func (instance *cluster) updateClusterNetworkPropertyIfNeeded() fail.Error {
 	return xerr
 }
 
-// updateClusterDefaultsPropertyIfNeeded ...
-func (instance *cluster) updateClusterDefaultsPropertyIfNeeded() fail.Error {
+// upgradeClusterDefaultsPropertyIfNeeded ...
+func (instance *cluster) upgradeClusterDefaultsPropertyIfNeeded() fail.Error {
 	if instance.isNull() {
 		return fail.InvalidInstanceError()
 	}
@@ -441,6 +452,7 @@ func (instance *cluster) updateCachedInformation() {
 	instance.installMethods[index] = installmethod.None
 }
 
+// FIXME: move this function to package converters ?
 // convertDefaultsV1ToDefaultsV2 converts propertiesv1.ClusterDefaults to propertiesv2.ClusterDefaults
 func convertDefaultsV1ToDefaultsV2(defaultsV1 *propertiesv1.ClusterDefaults, defaultsV2 *propertiesv2.ClusterDefaults) {
 	defaultsV2.Image = defaultsV1.Image

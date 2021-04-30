@@ -108,7 +108,7 @@ func LoadNetwork(svc iaas.Service, ref string) (rn resources.Network, xerr fail.
 			}
 
 			// Deal with legacy
-			xerr = rn.(*network).upgradeNetworkMetadataIfNeeded()
+			xerr = rn.(*network).upgradeMetadataIfNeeded()
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {
 				switch xerr.(type) {
@@ -148,8 +148,8 @@ func LoadNetwork(svc iaas.Service, ref string) (rn resources.Network, xerr fail.
 	return rn, nil
 }
 
-// upgradeNetworkMetadatasIfNeeded upgrades properties to most recent version
-func (instance *network) upgradeNetworkMetadataIfNeeded() fail.Error {
+// upgradeMetadatasIfNeeded upgrades properties to most recent version
+func (instance *network) upgradeMetadataIfNeeded() fail.Error {
 	xerr := instance.Alter(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
 		abstractNetwork, ok := clonable.(*abstract.Network)
 		if !ok {

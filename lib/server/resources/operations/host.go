@@ -134,7 +134,7 @@ func LoadHost(svc iaas.Service, ref string) (rh resources.Host, xerr fail.Error)
 			}
 
 			// deal with legacy
-			xerr = rh.(*host).upgradeIfNeeded()
+			xerr = rh.(*host).upgradeMetadataIfNeeded()
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {
 				switch xerr.(type) {
@@ -174,11 +174,11 @@ func LoadHost(svc iaas.Service, ref string) (rh resources.Host, xerr fail.Error)
 	return rh, nil
 }
 
-// upgradeIfNeeded upgrades Host properties if needed
-func (instance *host) upgradeIfNeeded() fail.Error {
+// upgradeMetadataIfNeeded upgrades Host properties if needed
+func (instance *host) upgradeMetadataIfNeeded() fail.Error {
 	return instance.Alter(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
 		if !props.Lookup(hostproperty.NetworkV2) {
-			// upgrade hostproperty.NetworkV1 to hostproperty.NetworkV2
+			// -- get hostproperty.NetworkV1 --
 			var hnV1 *propertiesv1.HostNetwork
 			innerXErr := props.Alter(hostproperty.NetworkV1, func(clonable data.Clonable) fail.Error {
 				var ok bool
@@ -192,6 +192,15 @@ func (instance *host) upgradeIfNeeded() fail.Error {
 				return innerXErr
 			}
 
+			// -- load Network instance to apply metadata update if needed (creating missing Subnet metadata if needed) --
+			var networkInstance resources.Network
+			networkInstance, innerXErr = LoadNetwork(instance.GetService(), hnV1.DefaultNetworkID)
+			if innerXErr != nil {
+				return innerXErr
+			}
+			networkInstance.Released()
+
+			// -- updates the Host metadata property NetworkV1 to NetworkV2
 			innerXErr = props.Alter(hostproperty.NetworkV2, func(clonable data.Clonable) fail.Error {
 				hnV2, ok := clonable.(*propertiesv2.HostNetworking)
 				if !ok {
@@ -213,6 +222,7 @@ func (instance *host) upgradeIfNeeded() fail.Error {
 			}
 
 			// FIXME: clean old property or leave it ? will differ from v2 through time if Subnets are added for example
+			return nil
 		}
 
 		return fail.AlteredNothingError()
@@ -395,8 +405,9 @@ func getOperatorUsernameFromCfg(svc iaas.Service) (string, fail.Error) {
 	return userName, nil
 }
 
+// IsNull tests if instance is nil or empty
 func (instance *host) IsNull() bool {
-	return instance == nil || instance.core == nil || instance.core.isNull()
+	return instance.isNull()
 }
 
 // isNull tests if instance is nil or empty
