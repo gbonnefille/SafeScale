@@ -129,15 +129,6 @@ func LoadCluster(svc iaas.Service, name string) (rc resources.Cluster, xerr fail
 				return nil, innerXErr
 			}
 
-			// deal with legacy
-			xerr = rc.(*cluster).upgradeMetadataIfNeeded()
-			xerr = debug.InjectPlannedFail(xerr)
-			if xerr != nil {
-				return nullCluster(), xerr
-			}
-
-			rc.(*cluster).updateCachedInformation()
-
 			return rc, nil
 		}),
 	}
@@ -157,6 +148,15 @@ func LoadCluster(svc iaas.Service, name string) (rc resources.Cluster, xerr fail
 		return nullCluster(), fail.InconsistentError("nil value found in Cluster cache for key '%s'", name)
 	}
 	_ = cacheEntry.LockContent()
+
+	// deal with legacy
+	xerr = rc.(*cluster).upgradeMetadataIfNeeded()
+	xerr = debug.InjectPlannedFail(xerr)
+	if xerr != nil {
+		return nullCluster(), xerr
+	}
+
+	rc.(*cluster).updateCachedInformation()
 
 	return rc, nil
 }
@@ -439,17 +439,19 @@ func (instance *cluster) upgradeClusterDefaultsPropertyIfNeeded() fail.Error {
 
 // updateCachedInformation updates information cached in the instance
 func (instance *cluster) updateCachedInformation() {
-	instance.installMethods = map[uint8]installmethod.Enum{}
-	var index uint8
-	flavor, err := instance.unsafeGetFlavor()
-	if err == nil && flavor == clusterflavor.K8S {
+	if len(instance.installMethods) == 0 {
+		instance.installMethods = map[uint8]installmethod.Enum{}
+		var index uint8
+		flavor, err := instance.unsafeGetFlavor()
+		if err == nil && flavor == clusterflavor.K8S {
+			index++
+			instance.installMethods[index] = installmethod.Helm
+		}
 		index++
-		instance.installMethods[index] = installmethod.Helm
+		instance.installMethods[index] = installmethod.Bash
+		index++
+		instance.installMethods[index] = installmethod.None
 	}
-	index++
-	instance.installMethods[index] = installmethod.Bash
-	index++
-	instance.installMethods[index] = installmethod.None
 }
 
 // FIXME: move this function to package converters ?

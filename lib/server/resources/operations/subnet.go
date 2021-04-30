@@ -264,7 +264,7 @@ func LoadSubnet(svc iaas.Service, networkRef, subnetRef string) (rs resources.Su
 					return nil, innerXErr
 				}
 
-				return rs, rs.(*subnet).updateCachedInformation()
+				return rs, nil
 			}),
 		}
 		cacheEntry, xerr := subnetCache.Get(subnetID, options...)
@@ -292,64 +292,57 @@ func LoadSubnet(svc iaas.Service, networkRef, subnetRef string) (rs resources.Su
 		}
 		return nil, fail.NotFoundError("failed to find a Subnet referenced by '%s'", subnetRef)
 	}
-	return rs, nil
+
+	return rs, rs.(*subnet).updateCachedInformation()
 }
 
 // updateCachedInformation updates the information cached in instance because will be frequently used and will not changed over time
 func (instance *subnet) updateCachedInformation() fail.Error {
-	var /*networkID, */ primaryGatewayID, secondaryGatewayID string
-	xerr := instance.Review(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
-		as, ok := clonable.(*abstract.Subnet)
-		if !ok {
-			return fail.InconsistentError("'*abstract.Subnet' expected, '%s' provided", reflect.TypeOf(clonable).String())
-		}
+	if len(instance.gateways) == 0 {
+		var primaryGatewayID, secondaryGatewayID string
+		xerr := instance.Review(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
+			as, ok := clonable.(*abstract.Subnet)
+			if !ok {
+				return fail.InconsistentError("'*abstract.Subnet' expected, '%s' provided", reflect.TypeOf(clonable).String())
+			}
 
-		// networkID = as.Network
-		if len(as.GatewayIDs) > 0 {
-			primaryGatewayID = as.GatewayIDs[0]
-		}
-		if len(as.GatewayIDs) > 1 {
-			secondaryGatewayID = as.GatewayIDs[1]
-		}
-		return nil
-	})
-	xerr = debug.InjectPlannedFail(xerr)
-	if xerr != nil {
-		return xerr
-	}
-
-	if primaryGatewayID != "" {
-		hostInstance, xerr := LoadHost(instance.GetService(), primaryGatewayID)
+			if len(as.GatewayIDs) > 0 {
+				primaryGatewayID = as.GatewayIDs[0]
+			}
+			if len(as.GatewayIDs) > 1 {
+				secondaryGatewayID = as.GatewayIDs[1]
+			}
+			return nil
+		})
 		xerr = debug.InjectPlannedFail(xerr)
 		if xerr != nil {
 			return xerr
 		}
 
-		instance.gateways[0] = hostInstance.(*host)
-	}
-	if secondaryGatewayID != "" {
-		hostInstance, xerr := LoadHost(instance.GetService(), secondaryGatewayID)
-		xerr = debug.InjectPlannedFail(xerr)
-		if xerr != nil {
-			return xerr
+		if primaryGatewayID != "" {
+			hostInstance, xerr := LoadHost(instance.GetService(), primaryGatewayID)
+			xerr = debug.InjectPlannedFail(xerr)
+			if xerr != nil {
+				return xerr
+			}
+
+			instance.gateways[0] = hostInstance.(*host)
 		}
+		if secondaryGatewayID != "" {
+			hostInstance, xerr := LoadHost(instance.GetService(), secondaryGatewayID)
+			xerr = debug.InjectPlannedFail(xerr)
+			if xerr != nil {
+				return xerr
+			}
 
-		instance.gateways[1] = hostInstance.(*host)
+			instance.gateways[1] = hostInstance.(*host)
+		}
 	}
-
-	// if instance. == nil {
-	// 	networkInstance, xerr := LoadNetwork(instance.GetService(), networkID)
-	// 	xerr = debug.InjectPlannedFail(xerr)
-	// 	if xerr != nil {
-	// 		return xerr
-	// 	}
-	// 	instance.parentNetwork = networkInstance.(*network)
-	// }
-
 	return nil
 }
 
 func (instance *subnet) IsNull() bool {
+	// FIXME: (VPL) over-complicated, isNull() should do the same...
 	return instance == nil || (instance != nil && ((instance.core == nil) || (instance.core != nil && instance.core.isNull())))
 }
 

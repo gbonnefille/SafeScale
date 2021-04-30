@@ -557,6 +557,7 @@ func (w *worker) Proceed(ctx context.Context, v data.Map, s resources.FeatureSet
 
 	// Now enumerate steps and execute each of them
 	for _, k := range order {
+		logrus.Tracef("Preparing step %s...", k)
 		stepKey := stepsKey + "." + k
 		stepMap, ok := steps[strings.ToLower(k)].(map[string]interface{})
 		if !ok {
@@ -601,6 +602,12 @@ type taskLaunchStepParameters struct {
 func (w *worker) taskLaunchStep(task concurrency.Task, params concurrency.TaskParameters) (_ concurrency.TaskResult, xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
+	defer func() {
+		if xerr != nil {
+			logrus.Tracef("taskLaunchStep: error occured: %v", xerr)
+		}
+	}()
+	
 	if w == nil {
 		return nil, fail.InvalidInstanceError()
 	}

@@ -107,18 +107,6 @@ func LoadNetwork(svc iaas.Service, ref string) (rn resources.Network, xerr fail.
 				return nil, innerXErr
 			}
 
-			// Deal with legacy
-			xerr = rn.(*network).upgradeMetadataIfNeeded()
-			xerr = debug.InjectPlannedFail(xerr)
-			if xerr != nil {
-				switch xerr.(type) {
-				case *fail.ErrAlteredNothing:
-					// ignore
-				default:
-					return nil, fail.Wrap(xerr, "failed to upgrade Network properties")
-				}
-			}
-
 			return rn, nil
 		}),
 	}
@@ -144,6 +132,18 @@ func LoadNetwork(svc iaas.Service, ref string) (rn resources.Network, xerr fail.
 			_ = cacheEntry.UnlockContent()
 		}
 	}()
+
+	// Deal with legacy
+	xerr = rn.(*network).upgradeMetadataIfNeeded()
+	xerr = debug.InjectPlannedFail(xerr)
+	if xerr != nil {
+		switch xerr.(type) {
+		case *fail.ErrAlteredNothing:
+			// ignore
+		default:
+			return nil, fail.Wrap(xerr, "failed to upgrade Network properties")
+		}
+	}
 
 	return rn, nil
 }

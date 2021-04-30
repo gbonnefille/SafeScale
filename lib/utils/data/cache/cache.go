@@ -19,7 +19,6 @@ package cache
 //go:generate minimock -o ../mocks/mock_clonable.go -i github.com/CS-SI/SafeScale/lib/utils/data/cache.Cache
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,7 +26,6 @@ import (
 
 	"github.com/CS-SI/SafeScale/lib/utils/data"
 	"github.com/CS-SI/SafeScale/lib/utils/data/observer"
-	"github.com/CS-SI/SafeScale/lib/utils/debug/callstack"
 	"github.com/CS-SI/SafeScale/lib/utils/fail"
 )
 
@@ -130,7 +128,7 @@ func (instance *cache) unsafeReserveEntry(key string) (xerr fail.Error) {
 		return fail.NotAvailableError("the cache entry '%s' is already reserved", key)
 	}
 	if _, ok := instance.cache[key]; ok {
-		return fail.DuplicateError(callstack.DecorateWith("", "", fmt.Sprintf("there is already an entry in the cache with key '%s'", key), 0))
+		return fail.DuplicateError("there is already an entry in the cache with key '%s'", key)
 	}
 
 	ce := newEntry(&reservation{key: key})

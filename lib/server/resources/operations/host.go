@@ -133,19 +133,7 @@ func LoadHost(svc iaas.Service, ref string) (rh resources.Host, xerr fail.Error)
 				return nil, innerXErr
 			}
 
-			// deal with legacy
-			xerr = rh.(*host).upgradeMetadataIfNeeded()
-			xerr = debug.InjectPlannedFail(xerr)
-			if xerr != nil {
-				switch xerr.(type) {
-				case *fail.ErrAlteredNothing:
-					// nothing changed, continue
-				default:
-					return nil, fail.Wrap(xerr, "failed to upgrade Host metadata")
-				}
-			}
-
-			return rh, rh.(*host).updateCachedInformation()
+			return rh, nil
 		}),
 	}
 
@@ -171,7 +159,19 @@ func LoadHost(svc iaas.Service, ref string) (rh resources.Host, xerr fail.Error)
 		}
 	}()
 
-	return rh, nil
+	// deal with legacy
+	xerr = rh.(*host).upgradeMetadataIfNeeded()
+	xerr = debug.InjectPlannedFail(xerr)
+	if xerr != nil {
+		switch xerr.(type) {
+		case *fail.ErrAlteredNothing:
+			// nothing changed, continue
+		default:
+			return nil, fail.Wrap(xerr, "failed to upgrade Host metadata")
+		}
+	}
+
+	return rh, rh.(*host).updateCachedInformation()
 }
 
 // upgradeMetadataIfNeeded upgrades Host properties if needed
@@ -233,97 +233,68 @@ func (instance *host) upgradeMetadataIfNeeded() fail.Error {
 func (instance *host) updateCachedInformation() fail.Error {
 	svc := instance.GetService()
 
-	instance.installMethods = map[uint8]installmethod.Enum{}
+	if len(instance.installMethods) == 0 {
+		instance.installMethods = map[uint8]installmethod.Enum{}
 
-	opUser, opUserErr := getOperatorUsernameFromCfg(svc)
-	if opUserErr != nil {
-		return opUserErr
-	}
-
-	return instance.Review(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
-		ahc, ok := clonable.(*abstract.HostCore)
-		if !ok {
-			return fail.InconsistentError("'*abstract.HostCore' expected, '%s' provided", reflect.TypeOf(clonable).String())
+		opUser, opUserErr := getOperatorUsernameFromCfg(svc)
+		if opUserErr != nil {
+			return opUserErr
 		}
 
-		var primaryGatewayConfig, secondaryGatewayConfig *system.SSHConfig
-		innerXErr := props.Inspect(hostproperty.NetworkV2, func(clonable data.Clonable) fail.Error {
-			hnV2, ok := clonable.(*propertiesv2.HostNetworking)
+		return instance.Review(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
+			ahc, ok := clonable.(*abstract.HostCore)
 			if !ok {
-				return fail.InconsistentError("'*propertiesv2.HostNetworking' expected, '%s' provided", reflect.TypeOf(clonable).String())
+				return fail.InconsistentError("'*abstract.HostCore' expected, '%s' provided", reflect.TypeOf(clonable).String())
 			}
 
-			if len(hnV2.IPv4Addresses) > 0 {
-				instance.privateIP = hnV2.IPv4Addresses[hnV2.DefaultSubnetID]
-				if instance.privateIP == "" {
-					instance.privateIP = hnV2.IPv6Addresses[hnV2.DefaultSubnetID]
-				}
-			}
-			instance.publicIP = hnV2.PublicIPv4
-			if instance.publicIP == "" {
-				instance.publicIP = hnV2.PublicIPv6
-			}
-			if instance.publicIP != "" {
-				instance.accessIP = instance.publicIP
-			} else {
-				instance.accessIP = instance.privateIP
-			}
-
-			if !hnV2.Single && !hnV2.IsGateway {
-				subnetInstance, xerr := LoadSubnet(svc, "", hnV2.DefaultSubnetID)
-				xerr = debug.InjectPlannedFail(xerr)
-				if xerr != nil {
-					return xerr
+			var primaryGatewayConfig, secondaryGatewayConfig *system.SSHConfig
+			innerXErr := props.Inspect(hostproperty.NetworkV2, func(clonable data.Clonable) fail.Error {
+				hnV2, ok := clonable.(*propertiesv2.HostNetworking)
+				if !ok {
+					return fail.InconsistentError("'*propertiesv2.HostNetworking' expected, '%s' provided", reflect.TypeOf(clonable).String())
 				}
 
-				rgw, xerr := subnetInstance.(*subnet).unsafeInspectGateway(true)
-				xerr = debug.InjectPlannedFail(xerr)
-				if xerr != nil {
-					return xerr
-				}
-
-				gwErr := rgw.Inspect(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
-					gwahc, ok := clonable.(*abstract.HostCore)
-					if !ok {
-						return fail.InconsistentError("'*abstract.HostCore' expected, '%s' provided", reflect.TypeOf(clonable).String())
+				if len(hnV2.IPv4Addresses) > 0 {
+					instance.privateIP = hnV2.IPv4Addresses[hnV2.DefaultSubnetID]
+					if instance.privateIP == "" {
+						instance.privateIP = hnV2.IPv6Addresses[hnV2.DefaultSubnetID]
 					}
-
-					ip := rgw.(*host).accessIP
-					primaryGatewayConfig = &system.SSHConfig{
-						PrivateKey: gwahc.PrivateKey,
-						Port:       int(gwahc.SSHPort),
-						IPAddress:  ip,
-						Hostname:   gwahc.Name,
-						User:       opUser,
-					}
-					return nil
-				})
-				if gwErr != nil {
-					return gwErr
+				}
+				instance.publicIP = hnV2.PublicIPv4
+				if instance.publicIP == "" {
+					instance.publicIP = hnV2.PublicIPv6
+				}
+				if instance.publicIP != "" {
+					instance.accessIP = instance.publicIP
+				} else {
+					instance.accessIP = instance.privateIP
 				}
 
-				// Secondary gateway may not exist...
-				rgw, xerr = subnetInstance.(*subnet).unsafeInspectGateway(false)
-				xerr = debug.InjectPlannedFail(xerr)
-				if xerr != nil {
-					switch xerr.(type) {
-					case *fail.ErrNotFound:
-						// continue
-					default:
+				if !hnV2.Single && !hnV2.IsGateway {
+					subnetInstance, xerr := LoadSubnet(svc, "", hnV2.DefaultSubnetID)
+					xerr = debug.InjectPlannedFail(xerr)
+					if xerr != nil {
 						return xerr
 					}
-				} else {
-					gwErr = rgw.Review(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
+
+					rgw, xerr := subnetInstance.(*subnet).unsafeInspectGateway(true)
+					xerr = debug.InjectPlannedFail(xerr)
+					if xerr != nil {
+						return xerr
+					}
+
+					gwErr := rgw.Inspect(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
 						gwahc, ok := clonable.(*abstract.HostCore)
 						if !ok {
 							return fail.InconsistentError("'*abstract.HostCore' expected, '%s' provided", reflect.TypeOf(clonable).String())
 						}
 
-						secondaryGatewayConfig = &system.SSHConfig{
+						ip := rgw.(*host).accessIP
+						primaryGatewayConfig = &system.SSHConfig{
 							PrivateKey: gwahc.PrivateKey,
 							Port:       int(gwahc.SSHPort),
-							IPAddress:  rgw.(*host).accessIP,
-							Hostname:   rgw.GetName(),
+							IPAddress:  ip,
+							Hostname:   gwahc.Name,
 							User:       opUser,
 						}
 						return nil
@@ -331,57 +302,90 @@ func (instance *host) updateCachedInformation() fail.Error {
 					if gwErr != nil {
 						return gwErr
 					}
+
+					// Secondary gateway may not exist...
+					rgw, xerr = subnetInstance.(*subnet).unsafeInspectGateway(false)
+					xerr = debug.InjectPlannedFail(xerr)
+					if xerr != nil {
+						switch xerr.(type) {
+						case *fail.ErrNotFound:
+							// continue
+						default:
+							return xerr
+						}
+					} else {
+						gwErr = rgw.Review(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
+							gwahc, ok := clonable.(*abstract.HostCore)
+							if !ok {
+								return fail.InconsistentError("'*abstract.HostCore' expected, '%s' provided", reflect.TypeOf(clonable).String())
+							}
+
+							secondaryGatewayConfig = &system.SSHConfig{
+								PrivateKey: gwahc.PrivateKey,
+								Port:       int(gwahc.SSHPort),
+								IPAddress:  rgw.(*host).accessIP,
+								Hostname:   rgw.GetName(),
+								User:       opUser,
+							}
+							return nil
+						})
+						if gwErr != nil {
+							return gwErr
+						}
+					}
 				}
+				return nil
+			})
+			if innerXErr != nil {
+				return innerXErr
 			}
+
+			instance.sshProfile = &system.SSHConfig{
+				Port:                   int(ahc.SSHPort),
+				IPAddress:              instance.accessIP,
+				Hostname:               instance.GetName(),
+				User:                   opUser,
+				PrivateKey:             ahc.PrivateKey,
+				GatewayConfig:          primaryGatewayConfig,
+				SecondaryGatewayConfig: secondaryGatewayConfig,
+			}
+
+			var index uint8
+			innerXErr = props.Inspect(hostproperty.SystemV1, func(clonable data.Clonable) fail.Error {
+				systemV1, ok := clonable.(*propertiesv1.HostSystem)
+				if !ok {
+					logrus.Error(fail.InconsistentError("'*propertiesv1.HostSystem' expected, '%s' provided", reflect.TypeOf(clonable).String()))
+				}
+				if systemV1.Type == "linux" {
+					switch systemV1.Flavor {
+					case "centos", "redhat":
+						index++
+						instance.installMethods[index] = installmethod.Yum
+					case "debian":
+						fallthrough
+					case "ubuntu":
+						index++
+						instance.installMethods[index] = installmethod.Apt
+					case "fedora", "rhel":
+						index++
+						instance.installMethods[index] = installmethod.Dnf
+					}
+				}
+				return nil
+			})
+			if innerXErr != nil {
+				return innerXErr
+			}
+
+			index++
+			instance.installMethods[index] = installmethod.Bash
+			index++
+			instance.installMethods[index] = installmethod.None
 			return nil
 		})
-		if innerXErr != nil {
-			return innerXErr
-		}
+	}
 
-		instance.sshProfile = &system.SSHConfig{
-			Port:                   int(ahc.SSHPort),
-			IPAddress:              instance.accessIP,
-			Hostname:               instance.GetName(),
-			User:                   opUser,
-			PrivateKey:             ahc.PrivateKey,
-			GatewayConfig:          primaryGatewayConfig,
-			SecondaryGatewayConfig: secondaryGatewayConfig,
-		}
-
-		var index uint8
-		innerXErr = props.Inspect(hostproperty.SystemV1, func(clonable data.Clonable) fail.Error {
-			systemV1, ok := clonable.(*propertiesv1.HostSystem)
-			if !ok {
-				logrus.Error(fail.InconsistentError("'*propertiesv1.HostSystem' expected, '%s' provided", reflect.TypeOf(clonable).String()))
-			}
-			if systemV1.Type == "linux" {
-				switch systemV1.Flavor {
-				case "centos", "redhat":
-					index++
-					instance.installMethods[index] = installmethod.Yum
-				case "debian":
-					fallthrough
-				case "ubuntu":
-					index++
-					instance.installMethods[index] = installmethod.Apt
-				case "fedora", "rhel":
-					index++
-					instance.installMethods[index] = installmethod.Dnf
-				}
-			}
-			return nil
-		})
-		if innerXErr != nil {
-			return innerXErr
-		}
-
-		index++
-		instance.installMethods[index] = installmethod.Bash
-		index++
-		instance.installMethods[index] = installmethod.None
-		return nil
-	})
+	return nil
 }
 
 func getOperatorUsernameFromCfg(svc iaas.Service) (string, fail.Error) {
