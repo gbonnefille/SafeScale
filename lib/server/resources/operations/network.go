@@ -156,7 +156,7 @@ func (instance *network) upgradeMetadataIfNeeded() fail.Error {
 			return fail.InconsistentError("'*abstract.Networking' expected, '%s' provided", reflect.TypeOf(clonable).String())
 		}
 
-		if !props.Lookup(networkproperty.SubnetsV1) {
+		if abstractNetwork.GatewayID != "" {
 			svc := instance.GetService()
 
 			// -- creates Subnet in metadata --
