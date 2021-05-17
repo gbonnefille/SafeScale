@@ -848,34 +848,124 @@ func (instance *Cluster) createHostResources(
 		return fail.AbortedError(nil, "aborted")
 	}
 
-	gwInstallTasks, xerr := concurrency.NewTaskGroupWithParent(task, concurrency.InheritParentIDOption, concurrency.AmendID("/gateway"))
+	flow, xerr := concurrency.NewFlow(task)
+	if xerr != nil {
+		return xerr
+	}
+	xerr = flow.Define(
+		// Step 1: install gateways, create masters and nodes
+		flow.Parallel(
+			flow.Sequence(
+				flow.Parallel(
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						// Step 1: starts gateway installation plus masters creation plus nodes creation
+						_, innerXErr = instance.taskInstallGateway(task, taskInstallGatewayParameters{primaryGateway})
+						innerXErr = debug.InjectPlannedFail(innerXErr)
+						if innerXErr != nil {
+							return innerXErr
+						}
+						// defer onFailureAbortTask(primaryGatewayTask, &xerr)
+						return nil
+					},
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						if haveSecondaryGateway {
+							_, innerXErr = instance.taskInstallGateway(task, taskInstallGatewayParameters{secondaryGateway})
+							innerXErr = debug.InjectPlannedFail(innerXErr)
+							if innerXErr != nil {
+								return innerXErr
+							}
+							// defer onFailureAbortTask(secondaryGatewayTask, &xerr)
+						}
+						return nil
+					},
+				),
+				flow.Parallel(
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						// Step 3: start gateway configuration (needs MasterIPs so masters must be installed first)
+						// Configure gateway(s) and waits for the result
+						_, innerXErr = instance.taskConfigureGateway(task, taskConfigureGatewayParameters{Host: primaryGateway})
+						innerXErr = debug.InjectPlannedFail(innerXErr)
+						if innerXErr != nil {
+							return innerXErr
+						}
+						return nil
+					},
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						if haveSecondaryGateway {
+							_, innerXErr = instance.taskConfigureGateway(task, taskConfigureGatewayParameters{Host: secondaryGateway})
+							innerXErr = debug.InjectPlannedFail(innerXErr)
+							if innerXErr != nil {
+								return innerXErr
+							}
+						}
+						return nil
+					},
+				),
+			),
+			// NamedParallel() is used to allow the parallel flow job for nodes to sync on masters configuration
+			// before to configure nodes
+			flow.NamedParallel("masters",
+				flow.Sequence(
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						_, innerXErr = instance.taskCreateMasters(task, taskCreateMastersParameters{
+							count:         masterCount,
+							mastersDef:    mastersDef,
+							keepOnFailure: keepOnFailure,
+						})
+						innerXErr = debug.InjectPlannedFail(innerXErr)
+						if innerXErr != nil {
+							return innerXErr
+						}
+						// defer onFailureAbortTask(mastersTask, &xerr)
+						return nil
+					},
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						// Step 4: configure masters (if masters created successfully and gateways configured successfully)
+						_, innerXErr = instance.taskConfigureMasters(task, nil)
+						innerXErr = debug.InjectPlannedFail(innerXErr)
+						if innerXErr != nil {
+							return innerXErr
+						}
+						return nil
+					},
+				),
+			),
+			flow.Parallel(
+				flow.Sequence(
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						_, innerXErr = instance.taskCreateNodes(task, taskCreateNodesParameters{
+							count:         initialNodeCount,
+							public:        false,
+							nodesDef:      nodesDef,
+							keepOnFailure: keepOnFailure,
+						})
+						innerXErr = debug.InjectPlannedFail(innerXErr)
+						if innerXErr != nil {
+							return innerXErr
+						}
+						// defer onFailureAbortTask(privateNodesTask, &xerr)
+						return nil
+					},
+					flow.WaitFor("masters"),   // Waits parallel job "masters" done
+					func(task concurrency.Task) (innerXErr fail.Error) {
+						_, innerXErr = instance.taskConfigureNodes(task, nil)
+						innerXErr = debug.InjectPlannedFail(innerXErr)
+						if innerXErr != nil {
+							return innerXErr
+						}
+						return nil
+					},
+				),
+			),
+		),
+	)
 	if xerr != nil {
 		return xerr
 	}
 
-	// Step 1: starts gateway installation plus masters creation plus nodes creation
-	_, xerr = gwInstallTasks.Start(instance.taskInstallGateway, taskInstallGatewayParameters{primaryGateway}, concurrency.InheritParentIDOption, concurrency.AmendID(fmt.Sprintf("/%s/install", primaryGateway.GetName())))
-	xerr = debug.InjectPlannedFail(xerr)
+	xerr = flow.Execute(concurrency.FailEarly)
 	if xerr != nil {
 		return xerr
-	}
-
-	startedTasks = append(startedTasks, gwInstallTasks)
-
-	if task.Aborted() {
-		return fail.AbortedError(nil, "aborted")
-	}
-
-	if haveSecondaryGateway {
-		_, xerr = gwInstallTasks.Start(instance.taskInstallGateway, taskInstallGatewayParameters{secondaryGateway}, concurrency.InheritParentIDOption, concurrency.AmendID(fmt.Sprintf("/%s/install", secondaryGateway.GetName())))
-		xerr = debug.InjectPlannedFail(xerr)
-		if xerr != nil {
-			return xerr
-		}
-	}
-
-	if task.Aborted() {
-		return fail.AbortedError(nil, "aborted")
 	}
 
 	// Starting from here, delete masters if exiting with error and req.keepOnFailure is not true
@@ -912,27 +1002,6 @@ func (instance *Cluster) createHostResources(
 		}
 	}()
 
-	mastersCreateTasks, xerr := concurrency.NewTaskGroupWithParent(task, concurrency.InheritParentIDOption, concurrency.AmendID("/masters"))
-	if xerr != nil {
-		return xerr
-	}
-
-	_, xerr = mastersCreateTasks.Start(instance.taskCreateMasters, taskCreateMastersParameters{
-		count:         masterCount,
-		mastersDef:    mastersDef,
-		keepOnFailure: keepOnFailure,
-	}, concurrency.InheritParentIDOption)
-	xerr = debug.InjectPlannedFail(xerr)
-	if xerr != nil {
-		return xerr
-	}
-
-	startedTasks = append(startedTasks, mastersCreateTasks)
-
-	if task.Aborted() {
-		return fail.AbortedError(nil, "aborted")
-	}
-
 	// Starting from here, if exiting with error, delete nodes
 	defer func() {
 		if xerr != nil && !keepOnFailure {
@@ -967,69 +1036,24 @@ func (instance *Cluster) createHostResources(
 		}
 	}()
 
-	privateNodesCreateTasks, xerr := concurrency.NewTaskGroupWithParent(task, concurrency.InheritParentIDOption, concurrency.AmendID("/nodes"))
-	if xerr != nil {
-		return xerr
-	}
+	// // Step 2: awaits gateway installation end and masters installation end
+	// if _, primaryGatewayStatus = primaryGatewayTask.Wait(); primaryGatewayStatus != nil {
+	// 	return primaryGatewayStatus
+	// }
+	// if haveSecondaryGateway && secondaryGatewayTask != nil {
+	// 	if _, secondaryGatewayStatus = secondaryGatewayTask.Wait(); secondaryGatewayStatus != nil {
+	// 		return secondaryGatewayStatus
+	// 	}
+	// }
+	//
+	// if _, mastersStatus = mastersTask.Wait(); mastersStatus != nil {
+	// 	return mastersStatus
+	// }
+	//
+	// if task.Aborted() {
+	// 	return fail.AbortedError(nil, "aborted")
+	// }
 
-	_, xerr = privateNodesCreateTasks.Start(instance.taskCreateNodes, taskCreateNodesParameters{
-		count:         initialNodeCount,
-		public:        false,
-		nodesDef:      nodesDef,
-		keepOnFailure: keepOnFailure,
-	}, concurrency.InheritParentIDOption)
-	xerr = debug.InjectPlannedFail(xerr)
-	if xerr != nil {
-		return xerr
-	}
-
-	startedTasks = append(startedTasks, privateNodesCreateTasks)
-
-	if task.Aborted() {
-		return fail.AbortedError(nil, "aborted")
-	}
-
-	// Step 2: awaits gateway installation end and masters installation end
-	if _, gatewayInstallStatus = gwInstallTasks.WaitGroup(); gatewayInstallStatus != nil {
-		return gatewayInstallStatus
-	}
-
-	if _, mastersStatus = mastersCreateTasks.WaitGroup(); mastersStatus != nil {
-		return mastersStatus
-	}
-
-	if task.Aborted() {
-		return fail.AbortedError(nil, "aborted")
-	}
-
-	// Step 3: start gateway configuration (needs MasterIPs so masters must be installed first)
-	// Configure gateway(s) and waits for the result
-
-	gwCfgTasks, xerr := concurrency.NewTaskGroupWithParent(task, concurrency.InheritParentIDOption, concurrency.AmendID("/configuregateways"))
-	if xerr != nil {
-		return xerr
-	}
-
-	_, xerr = gwCfgTasks.Start(instance.taskConfigureGateway, taskConfigureGatewayParameters{Host: primaryGateway}, concurrency.InheritParentIDOption, concurrency.AmendID(fmt.Sprintf("/host/%s/configure", primaryGateway.GetName())))
-	xerr = debug.InjectPlannedFail(xerr)
-	if xerr != nil {
-		return xerr
-	}
-
-	startedTasks = append(startedTasks, gwCfgTasks)
-
-	if haveSecondaryGateway {
-		_, xerr = gwCfgTasks.Start(instance.taskConfigureGateway, taskConfigureGatewayParameters{Host: secondaryGateway}, concurrency.InheritParentIDOption)
-		xerr = debug.InjectPlannedFail(xerr)
-		if xerr != nil {
-			return xerr
-		}
-	}
-
-	_, gatewayConfigurationStatus = gwCfgTasks.WaitGroup()
-	if gatewayConfigurationStatus != nil {
-		return gatewayConfigurationStatus
-	}
 
 	// Step 4: configure masters (if masters created successfully and gateways configured successfully)
 	mastersCfgTask, xerr := concurrency.NewTaskWithParent(task, concurrency.InheritParentIDOption, concurrency.AmendID("/masters"))
