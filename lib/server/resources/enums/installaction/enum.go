@@ -29,28 +29,29 @@ type Enum uint8
 const (
 	_ Enum = iota
 
-	// Check represents a check action, to test if a feature is installed
-	Check
+	// ActiveCheck orders an active check (uses yaml 'check' action), to test if a feature is installed
+	ActiveCheck
 	// Add represents an add action, to install a feature
 	Add
 	// Remove represents a remove action, to remove a feature
 	Remove
-
-	// // NextEnum marks the next value (or the max, depending the use)
-	// NextEnum
+	// PassiveCheck orders a passive check (look inside metadata)
+	PassiveCheck
 )
 
 var (
 	stringMap = map[string]Enum{
-		"check":  Check,
-		"add":    Add,
-		"remove": Remove,
+		"activecheck":  ActiveCheck,
+		"add":          Add,
+		"remove":       Remove,
+		"passivecheck": PassiveCheck,
 	}
 
 	enumMap = map[Enum]string{
-		Check:  "Check",
-		Add:    "Add",
-		Remove: "Remove",
+		ActiveCheck:  "ActiveCheck",
+		Add:          "Add",
+		Remove:       "Remove",
+		PassiveCheck: "PassiveCheck",
 	}
 )
 

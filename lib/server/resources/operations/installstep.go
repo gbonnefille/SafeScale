@@ -235,8 +235,8 @@ type step struct {
 	WallTime time.Duration
 	// YamlKey contains the root yaml key on the specification file
 	YamlKey string
-	// OptionsFileContent contains the "options file" if it exists (for DCOS cluster for now)
-	OptionsFileContent string
+	// // OptionsFileContent contains the "options file" if it exists (for DCOS cluster for now)
+	// OptionsFileContent string
 	// Serial tells if step can be performed in parallel on selected host or not
 	Serial bool
 }
@@ -253,8 +253,28 @@ func (is *step) Run(task concurrency.Task, hosts []resources.Host, v data.Map, s
 	defer tracer.Exiting()
 	defer fail.OnExitLogError(&xerr, tracer.TraceMessage())
 
-	if is.Serial || s.Serialize {
-
+	// If action is passive check, only look inside metadata of Hosts
+	if is.Worker.action == installaction.PassiveCheck {
+		for _, h := range hosts {
+			for _, v := range h.InstalledFeatures() {
+				var outcome stepResult
+				if v == is.Worker.feature.GetName() {
+					outcome = stepResult{
+						success:   true,
+						completed: true,
+						retcode:   0,
+					}
+				} else {
+					outcome = stepResult{
+						success:   false,
+						completed: true,
+						retcode:   0,
+					}
+				}
+				outcomes.AddOne(h.GetName(), outcome)
+			}
+		}
+	} else if is.Serial || s.Serialize {
 		for _, h := range hosts {
 			tracer.Trace("%s(%s):step(%s)@%s: starting", is.Worker.action.String(), is.Worker.feature.GetName(), is.Name, h.GetName())
 			is.Worker.startTime = time.Now()
@@ -309,7 +329,7 @@ func (is *step) Run(task concurrency.Task, hosts []resources.Host, v data.Map, s
 			outcomes.AddOne(h.GetName(), outcome.(resources.UnitResult))
 
 			if !outcomes.Successful() {
-				if is.Worker.action == installaction.Check { // Checks can fail and it's ok
+				if is.Worker.action == installaction.ActiveCheck { // Active Checks can fail and it's ok
 					tracer.Trace("%s(%s):step(%s)@%s finished in %s: not present",
 						is.Worker.action.String(), is.Worker.feature.GetName(), is.Name, h.GetName(),
 						temporal.FormatDuration(time.Since(is.Worker.startTime)))
@@ -392,7 +412,7 @@ func (is *step) Run(task concurrency.Task, hosts []resources.Host, v data.Map, s
 			}
 
 			if !outcomes.Successful() {
-				if is.Worker.action == installaction.Check { // Checks can fail and it's ok
+				if is.Worker.action == installaction.ActiveCheck { // Checks can fail and it's ok
 					tracer.Trace(": %s(%s):step(%s)@%s finished in %s: not present",
 						is.Worker.action.String(), is.Worker.feature.GetName(), is.Name, k,
 						temporal.FormatDuration(time.Since(is.Worker.startTime)))
@@ -445,20 +465,21 @@ func (is *step) taskRunOnHost(task concurrency.Task, params concurrency.TaskPara
 		return stepResult{err: fail.Wrap(xerr, "failed to finalize installer script for step '%s'", is.Name)}, nil
 	}
 
-	// If options file is defined, upload it to the remote rh
-	if is.OptionsFileContent != "" {
-		rfcItem := remotefile.Item{
-			Remote:       utils.TempFolder + "/options.json",
-			RemoteOwner:  "cladm:safescale", // FIXME: group 'safescale' must be replaced with OperatorUsername here, and why cladm is being used ?
-			RemoteRights: "ug+rw-x,o-rwx",
-		}
-		xerr = rfcItem.UploadString(task.GetContext(), is.OptionsFileContent, p.Host)
-		_ = os.Remove(rfcItem.Local)
-		xerr = debug.InjectPlannedFail(xerr)
-		if xerr != nil {
-			return stepResult{err: xerr}, nil
-		}
-	}
+	// VPL: no more use
+	// // If options file is defined, upload it to the remote rh
+	// if is.OptionsFileContent != "" {
+	// 	rfcItem := remotefile.Item{
+	// 		Remote:       utils.TempFolder + "/options.json",
+	// 		RemoteOwner:  "cladm:safescale", // FIXME: group 'safescale' must be replaced with OperatorUsername here, and why cladm is being used ?
+	// 		RemoteRights: "ug+rw-x,o-rwx",
+	// 	}
+	// 	xerr = rfcItem.UploadString(task.GetContext(), is.OptionsFileContent, p.Host)
+	// 	_ = os.Remove(rfcItem.Local)
+	// 	xerr = debug.InjectPlannedFail(xerr)
+	// 	if xerr != nil {
+	// 		return stepResult{err: xerr}, nil
+	// 	}
+	// }
 
 	hidesOutput := strings.Contains(command, "set +x\n")
 	if hidesOutput {
