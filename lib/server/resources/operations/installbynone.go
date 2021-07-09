@@ -33,7 +33,7 @@ import (
 type noneInstaller struct{}
 
 // Check checks if the Feature is installed
-func (i *noneInstaller) Check(_ context.Context, f resources.Feature, t resources.Targetable, v data.Map, s resources.FeatureSettings) (r resources.Results, xerr fail.Error) {
+func (i *noneInstaller) Check(_ context.Context, f resources.Feature, t resources.Targetable, v data.Map, s resources.FeatureSettings, activeCheck bool) (r resources.Results, xerr fail.Error) {
 	r = nil
 	defer fail.OnPanic(&xerr)
 

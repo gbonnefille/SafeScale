@@ -33,7 +33,6 @@ import (
 	"github.com/CS-SI/SafeScale/lib/server/iaas"
 	"github.com/CS-SI/SafeScale/lib/server/resources"
 	"github.com/CS-SI/SafeScale/lib/server/resources/abstract"
-	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clustercomplexity"
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/clusterflavor"
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/featuretargettype"
 	"github.com/CS-SI/SafeScale/lib/server/resources/enums/hostproperty"
@@ -148,10 +147,16 @@ func newWorker(f resources.Feature, t resources.Targetable, m installmethod.Enum
 	}
 
 	if m != installmethod.None {
-		w.rootKey = "feature.install." + strings.ToLower(m.String()) + "." + strings.ToLower(a.String())
+		var action string
+		switch a {
+		case installaction.ActiveCheck, installaction.PassiveCheck:
+			action = "check"
+		default:
+			action = a.String()
+		}
+		w.rootKey = "feature.install." + strings.ToLower(m.String()) + "." + strings.ToLower(action)
 		if !f.(*Feature).Specs().IsSet(w.rootKey) {
-			msg := `syntax error in Feature '%s' specification file (%s):
-				no key '%s' found`
+			msg := `syntax error in Feature '%s' specification file (%s): no key '%s' found`
 			return nil, fail.SyntaxError(msg, f.GetName(), f.GetDisplayFilename(), w.rootKey)
 		}
 	}
@@ -537,7 +542,7 @@ func (w *worker) Proceed(ctx context.Context, v data.Map, s resources.FeatureSet
 			return nil, fail.Wrap(xerr, "failed to set security rules on Subnet")
 		}
 	case installaction.Remove:
-		// FIXME: Uncomplete ??
+		// FIXME: finalize reverseproxy rules deletion
 		// if !s.SkipProxy {
 		// 	rgw, xerr := w.identifyAvailableGateway()
 		// 	if xerr == nil {
@@ -653,7 +658,7 @@ func (w *worker) taskLaunchStep(task concurrency.Task, params concurrency.TaskPa
 	var (
 		runContent string
 		stepT      = stepTargets{}
-		options    = map[string]string{}
+		// options    = map[string]string{}
 	)
 
 	// Determine list of hosts concerned by the step
@@ -718,43 +723,44 @@ func (w *worker) taskLaunchStep(task concurrency.Task, params concurrency.TaskPa
 		return nil, fail.SyntaxError(msg, w.feature.GetName(), w.feature.GetDisplayFilename(), p.stepKey, yamlRunKeyword)
 	}
 
-	// If there is an options file (for now specific to DCOS), upload it to the remote host
-	optionsFileContent := ""
-	if anon, ok = p.stepMap[yamlOptionsKeyword]; ok {
-		for i, j := range anon.(map[string]interface{}) {
-			options[i] = j.(string)
-		}
-		var (
-			avails  = map[string]interface{}{}
-			content interface{}
-		)
-		complexity, xerr := w.cluster.GetComplexity()
-		xerr = debug.InjectPlannedFail(xerr)
-		if xerr != nil {
-			return nil, xerr
-		}
-
-		c := strings.ToLower(complexity.String())
-		for k, anon := range options {
-			avails[strings.ToLower(k)] = anon
-		}
-		if content, ok = avails[c]; !ok {
-			if c == strings.ToLower(clustercomplexity.Large.String()) {
-				c = clustercomplexity.Normal.String()
-			}
-			if c == strings.ToLower(clustercomplexity.Normal.String()) {
-				if content, ok = avails[c]; !ok {
-					content, ok = avails[clustercomplexity.Small.String()]
-				}
-			}
-		}
-		if ok {
-			optionsFileContent = content.(string)
-			p.variables["options"] = fmt.Sprintf("--options=%s/options.json", utils.TempFolder)
-		}
-	} else {
-		p.variables["options"] = ""
-	}
+	// VPL: no more use
+	// // If there is an options file (for now specific to DCOS), upload it to the remote host
+	// optionsFileContent := ""
+	// if anon, ok = p.stepMap[yamlOptionsKeyword]; ok {
+	// 	for i, j := range anon.(map[string]interface{}) {
+	// 		options[i] = j.(string)
+	// 	}
+	// 	var (
+	// 		avails  = map[string]interface{}{}
+	// 		content interface{}
+	// 	)
+	// 	complexity, xerr := w.cluster.GetComplexity()
+	// 	xerr = debug.InjectPlannedFail(xerr)
+	// 	if xerr != nil {
+	// 		return nil, xerr
+	// 	}
+	//
+	// 	c := strings.ToLower(complexity.String())
+	// 	for k, anon := range options {
+	// 		avails[strings.ToLower(k)] = anon
+	// 	}
+	// 	if content, ok = avails[c]; !ok {
+	// 		if c == strings.ToLower(clustercomplexity.Large.String()) {
+	// 			c = clustercomplexity.Normal.String()
+	// 		}
+	// 		if c == strings.ToLower(clustercomplexity.Normal.String()) {
+	// 			if content, ok = avails[c]; !ok {
+	// 				content, ok = avails[clustercomplexity.Small.String()]
+	// 			}
+	// 		}
+	// 	}
+	// 	if ok {
+	// 		optionsFileContent = content.(string)
+	// 		p.variables["options"] = fmt.Sprintf("--options=%s/options.json", utils.TempFolder)
+	// 	}
+	// } else {
+	// 	p.variables["options"] = ""
+	// }
 
 	wallTime := temporal.GetLongOperationTimeout()
 	if anon, ok = p.stepMap[yamlTimeoutKeyword]; ok {
@@ -799,7 +805,7 @@ func (w *worker) taskLaunchStep(task concurrency.Task, params concurrency.TaskPa
 		Action:             w.action,
 		Script:             templateCommand,
 		WallTime:           wallTime,
-		OptionsFileContent: optionsFileContent,
+		// OptionsFileContent: optionsFileContent,
 		YamlKey:            p.stepKey,
 		Serial:             serial,
 	}
@@ -818,7 +824,7 @@ func (w *worker) taskLaunchStep(task concurrency.Task, params concurrency.TaskPa
 			return &r, fail.NewError(msg)
 		}
 		// not successful but completed, if action is check means the Feature is not installed, it's an information not a failure
-		if w.action == installaction.Check {
+		if w.action == installaction.ActiveCheck || w.action == installaction.PassiveCheck {
 			return &r, nil
 		}
 
@@ -962,13 +968,13 @@ func (w *worker) setReverseProxy(ctx context.Context) (xerr fail.Error) {
 		return fail.InvalidParameterError("w.cluster", "nil cluster in setReverseProxy, cannot be nil")
 	}
 
-	rgw, xerr := w.identifyAvailableGateway(ctx)
+	gatewayInstance, xerr := w.identifyAvailableGateway(ctx)
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		return xerr
 	}
 
-	found, xerr := rgw.IsFeatureInstalled("edgeproxy4subnet")
+	found, xerr := gatewayInstance.IsFeatureInstalled("edgeproxy4subnet")
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		return xerr

@@ -43,7 +43,7 @@ type genericPackager struct {
 }
 
 // Check checks if the Feature is installed
-func (g *genericPackager) Check(ctx context.Context, f resources.Feature, t resources.Targetable, v data.Map, s resources.FeatureSettings) (r resources.Results, xerr fail.Error) {
+func (g *genericPackager) Check(ctx context.Context, f resources.Feature, t resources.Targetable, v data.Map, s resources.FeatureSettings, activeCheck bool) (r resources.Results, xerr fail.Error) {
 	r = nil
 	defer fail.OnPanic(xerr)
 
@@ -59,12 +59,17 @@ func (g *genericPackager) Check(ctx context.Context, f resources.Feature, t reso
 
 	yamlKey := "feature.install." + g.keyword + ".check"
 	if !f.(*Feature).Specs().IsSet(yamlKey) {
-		msg := `syntax error in Feature '%s' specification file (%s):
-				no key '%s' found`
+		msg := `syntax error in Feature '%s' specification file (%s): no key '%s' found`
 		return nil, fail.SyntaxError(msg, f.GetName(), f.GetDisplayFilename(), yamlKey)
 	}
 
-	worker, xerr := newWorker(f, t, g.method, installaction.Check, g.checkCommand)
+	var action installaction.Enum
+	if activeCheck {
+		action = installaction.ActiveCheck
+	} else {
+		action = installaction.PassiveCheck
+	}
+	worker, xerr := newWorker(f, t, g.method, action, g.checkCommand)
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		return nil, xerr
@@ -103,8 +108,7 @@ func (g *genericPackager) Add(ctx context.Context, f resources.Feature, t resour
 
 	yamlKey := "feature.install." + g.keyword + ".add"
 	if !f.(*Feature).Specs().IsSet(yamlKey) {
-		msg := `syntax error in Feature '%s' specification file (%s):
-				no key '%s' found`
+		msg := `syntax error in Feature '%s' specification file (%s): no key '%s' found`
 		return nil, fail.SyntaxError(msg, f.GetName(), f.GetDisplayFilename(), yamlKey)
 	}
 
@@ -148,8 +152,7 @@ func (g *genericPackager) Remove(ctx context.Context, f resources.Feature, t res
 
 	yamlKey := "feature.install." + g.keyword + ".remove"
 	if !f.(*Feature).Specs().IsSet(yamlKey) {
-		msg := `syntax error in Feature '%s' specification file (%s):
-				no key '%s' found`
+		msg := `syntax error in Feature '%s' specification file (%s): no key '%s' found`
 		return nil, fail.SyntaxError(msg, f.GetName(), f.GetDisplayFilename(), yamlKey)
 	}
 

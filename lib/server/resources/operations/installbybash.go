@@ -33,7 +33,7 @@ import (
 type bashInstaller struct{}
 
 // Check checks if the Feature is installed, using the check script in Specs
-func (i *bashInstaller) Check(ctx context.Context, f resources.Feature, t resources.Targetable, v data.Map, s resources.FeatureSettings) (r resources.Results, xerr fail.Error) {
+func (i *bashInstaller) Check(ctx context.Context, f resources.Feature, t resources.Targetable, v data.Map, s resources.FeatureSettings, activeCheck bool) (r resources.Results, xerr fail.Error) {
 	r = nil
 	defer fail.OnPanic(&xerr)
 
@@ -53,7 +53,13 @@ func (i *bashInstaller) Check(ctx context.Context, f resources.Feature, t resour
 		return nil, fail.SyntaxError(msg, f.GetName(), f.GetDisplayFilename(), yamlKey)
 	}
 
-	w, xerr := newWorker(f, t, installmethod.Bash, installaction.Check, nil)
+	var action installaction.Enum
+	if activeCheck {
+		action = installaction.ActiveCheck
+	} else {
+		action = installaction.PassiveCheck
+	}
+	w, xerr := newWorker(f, t, installmethod.Bash, action, nil)
 	if xerr != nil {
 		return nil, xerr
 	}

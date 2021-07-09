@@ -39,6 +39,11 @@ import (
 	"github.com/CS-SI/SafeScale/lib/utils/temporal"
 )
 
+const (
+	activeCheck bool = true
+	passiveCheck bool = false
+)
+
 // Feature contains the information about an installable Feature
 type Feature struct {
 	displayName     string                           // is the name of the service
@@ -380,9 +385,10 @@ func (f *Feature) Check(ctx context.Context, target resources.Targetable, v data
 		return nil, xerr
 	}
 
-	r, xerr := installer.Check(ctx, f, target, myV, s)
+	// FIXME: allow to pass check type as parameter
+	r, xerr := installer.Check(ctx, f, target, myV, s, activeCheck)
 
-	// FIXME: restore Feature check using iaas.ResourceCache
+	// FIXME: restore Feature check mimicing iaas.ResourceCache... as result of Host.InstalledFeatures()?
 	// _ = checkCache.ForceSet(cacheKey, results)
 	return r, xerr
 }
