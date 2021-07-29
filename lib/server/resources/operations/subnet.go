@@ -114,21 +114,21 @@ func ListSubnets(ctx context.Context, svc iaas.Service, networkID string, all bo
 		return svc.ListSubnets(networkID)
 	}
 
-	rs, xerr := NewSubnet(svc)
+	subnetInstance, xerr := NewSubnet(svc)
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		return nil, xerr
 	}
 
-	// recover subnets from metadata
+	// recover Subnets from metadata
 	var list []*abstract.Subnet
-	xerr = rs.Browse(ctx, func(as *abstract.Subnet) fail.Error {
+	xerr = subnetInstance.Browse(ctx, func(abstractSubnet *abstract.Subnet) fail.Error {
 		if task.Aborted() {
 			return fail.AbortedError(nil, "aborted")
 		}
 
-		if networkID == "" || as.Network == networkID {
-			list = append(list, as)
+		if networkID == "" || abstractSubnet.Network == networkID {
+			list = append(list, abstractSubnet)
 		}
 		return nil
 	})
@@ -401,9 +401,16 @@ func (instance *Subnet) Carry(clonable data.Clonable) (xerr fail.Error) {
 func (instance *Subnet) Create(ctx context.Context, req abstract.SubnetRequest, gwname string, gwSizing *abstract.HostSizingRequirements) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	// Note: do not use .isNull() here
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
 	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		subnetName := instance.GetName()
+		if subnetName != "" {
+			return fail.NotAvailableError("already carrying Subnet '%s'", subnetName)
+		}
+		return fail.InvalidInstanceContentError("instance", "is not null value")
 	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
@@ -689,13 +696,13 @@ func (instance *Subnet) unsafeCreateGateways(ctx context.Context, req abstract.S
 			cfg, xerr := svc.GetConfigurationOptions()
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {
-			return xerr
-		}
+				return xerr
+			}
 
 			imageQuery = cfg.GetString("DefaultImage")
 		}
 		if imageQuery == "" {
-			imageQuery = "Ubuntu 18.04"
+			imageQuery = "Ubuntu 20.04"
 		}
 		img, xerr := svc.SearchImage(imageQuery)
 		xerr = debug.InjectPlannedFail(xerr)
@@ -834,7 +841,7 @@ func (instance *Subnet) unsafeCreateGateways(ctx context.Context, req abstract.S
 		return fail.InconsistentError("task results shouldn't be nil")
 	}
 
-	id, xerr := primaryTask.GetID()
+	id, xerr := primaryTask.ID()
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		groupXErr = xerr
@@ -915,7 +922,7 @@ func (instance *Subnet) unsafeCreateGateways(ctx context.Context, req abstract.S
 	}
 
 	if req.HA {
-		id, xerr := secondaryTask.GetID()
+		id, xerr := secondaryTask.ID()
 		xerr = debug.InjectPlannedFail(xerr)
 		if xerr != nil {
 			if groupXErr == nil {
@@ -1031,7 +1038,7 @@ func (instance *Subnet) unsafeCreateGateways(ctx context.Context, req abstract.S
 		}
 
 		if secondaryGateway != nil {
-			// as.SecondaryGatewayID = secondaryGateway.GetID()
+			// as.SecondaryGatewayID = secondaryGateway.ID()
 			primaryUserdata.SecondaryGatewayPrivateIP, innerXErr = secondaryGateway.GetPrivateIP()
 			if innerXErr != nil {
 				return innerXErr
@@ -1336,7 +1343,10 @@ func (instance *Subnet) unbindHostFromVIP(vip *abstract.VirtualIP, host resource
 func (instance *Subnet) Browse(ctx context.Context, callback func(*abstract.Subnet) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	// Note: Browse is intended to be callable from null value, so do not validate rs
+	// Note: Browse is intended to be callable from null value, so do not validate instance with .IsNull()
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
 	}
@@ -1914,7 +1924,7 @@ func (instance *Subnet) deleteGateways(subnet *abstract.Subnet) (ids []string, x
 	if len(subnet.GatewayIDs) > 0 {
 		// FIXME: parallelize
 		for _, v := range subnet.GatewayIDs {
-			rh, xerr := LoadHost(svc, v)
+			hostInstance, xerr := LoadHost(svc, v)
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {
 				switch xerr.(type) {
@@ -1926,12 +1936,12 @@ func (instance *Subnet) deleteGateways(subnet *abstract.Subnet) (ids []string, x
 					return ids, xerr
 				}
 			} else {
-				name := rh.GetName()
+				name := hostInstance.GetName()
 				logrus.Debugf("Deleting gateway '%s'...", name)
 
 				// delete Host
-				ids = append(ids, rh.GetID())
-				xerr := rh.(*Host).RelaxedDeleteHost(context.Background())
+				ids = append(ids, hostInstance.GetID())
+				xerr := hostInstance.(*Host).RelaxedDeleteHost(context.Background())
 				xerr = debug.InjectPlannedFail(xerr)
 				if xerr != nil {
 					switch xerr.(type) {

@@ -41,15 +41,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type toV21_05_0 struct{}
+type toV21_05_0 struct{
+	dryRun bool
+}
 
-func (tv toV21_05_0) Upgrade(svc iaas.Service, from string) fail.Error {
+func (tv toV21_05_0) Upgrade(svc iaas.Service, from string, dryRun bool) fail.Error {
 	if svc == nil {
 		return fail.InvalidParameterCannotBeNilError("svc")
 	}
 
 	logrus.Infof("Upgrading metadata from version '%s' to version 'v21.05.0'", from)
 
+	tv.dryRun = dryRun
 	xerr := tv.upgradeNetworks(svc)
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
@@ -77,30 +80,68 @@ func (tv toV21_05_0) Upgrade(svc iaas.Service, from string) fail.Error {
 	return nil
 }
 
-func (tv toV21_05_0) upgradeNetworks(svc iaas.Service) fail.Error {
-	instance, xerr := operations.NewNetwork(svc)
+func (tv toV21_05_0) upgradeNetworks(svc iaas.Service) (xerr fail.Error) {
+	logrus.Infof("Upgrading metadata of Networks...")
+
+	var (
+		abstractOwningNetwork *abstract.Network
+		owningInstance        resources.Network
+	)
+	if svc.HasDefaultNetwork() {
+		// If there is a default Network/VPC, uses it as owning network for all defined networks in metadata to convert to Subnets
+		abstractOwningNetwork, xerr = svc.GetDefaultNetwork()
+		if xerr != nil {
+			return xerr
+		}
+
+		owningInstance, xerr = operations.LoadNetwork(svc, abstractOwningNetwork.ID)
+		if xerr != nil {
+			switch xerr.(type) {
+			case *fail.ErrNotFound:
+				owningInstance, xerr = operations.NewNetwork(svc)
+				if xerr == nil {
+					xerr = owningInstance.Import(context.Background(), abstractOwningNetwork.ID)
+				}
+				default:
+			}
+		}
+	} else {
+		owningInstance, xerr = operations.NewNetwork(svc)
+	}
 	if xerr != nil {
 		return xerr
 	}
 
-	logrus.Infof("Upgrading metadata of Networks...")
-	return instance.Browse(context.Background(), func(an *abstract.Network) fail.Error {
-		networkInstance, innerXErr := operations.LoadNetwork(svc, an.ID)
+	return owningInstance.Browse(context.Background(), func(abstractCurrentNetwork *abstract.Network) fail.Error {
+		if abstractOwningNetwork != nil && (abstractCurrentNetwork.Name == abstractOwningNetwork.Name || abstractCurrentNetwork.ID == abstractOwningNetwork.ID) {
+			return nil
+		}
+
+		networkInstance, innerXErr := operations.LoadNetwork(svc, abstractCurrentNetwork.Name)
+		innerXErr = debug.InjectPlannedFail(innerXErr)
 		if innerXErr != nil {
 			return innerXErr
 		}
 
-		innerXErr = tv.upgradeNetworkMetadataIfNeeded(networkInstance)
+		innerXErr = tv.upgradeNetworkMetadataIfNeeded(owningInstance, networkInstance)
 		networkInstance.Released()
+		innerXErr = debug.InjectPlannedFail(innerXErr)
 		return innerXErr
 	})
 }
 
 // upgradeNetworkMetadatasIfNeeded upgrades properties to most recent version
-func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) fail.Error {
-	networkName := instance.GetName()
-	subnetName := networkName
-	xerr := instance.Alter(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
+func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(owningInstance, currentInstance resources.Network) fail.Error {
+	var (
+		networkName, subnetName string
+	)
+	if owningInstance == nil || owningInstance.IsNull() {
+		owningInstance = currentInstance
+	}
+	networkName = owningInstance.GetName()
+	subnetName = currentInstance.GetName()
+
+	xerr := currentInstance.Alter(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
 		abstractNetwork, ok := clonable.(*abstract.Network)
 		if !ok {
 			return fail.InconsistentError("'*abstract.Networking' expected, '%s' provided", reflect.TypeOf(clonable).String())
@@ -109,7 +150,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 		if !props.Lookup(networkproperty.SubnetsV1) {
 			logrus.Tracef("Upgrading metadata of Network '%s'", networkName)
 
-			svc := instance.GetService()
+			svc := currentInstance.GetService()
 
 			// -- creates Subnet in metadata --
 			subnetInstance, innerXErr := operations.NewSubnet(svc)
@@ -119,6 +160,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 			}
 
 			abstractSubnet, innerXErr := svc.InspectSubnetByName(networkName, subnetName)
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				switch innerXErr.(type) {
 				case *fail.ErrNotFound:
@@ -128,7 +170,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 				}
 			}
 
-			abstractSubnet.Network = abstractNetwork.ID
+			abstractSubnet.Network = owningInstance.GetID()
 			abstractSubnet.IPVersion = ipversion.IPv4
 			abstractSubnet.DNSServers = abstractNetwork.DNSServers
 			abstractSubnet.Domain = abstractNetwork.Domain
@@ -148,7 +190,8 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 			defer subnetInstance.Released()
 
 			// -- create Security groups --
-			gwSG, internalSG, publicSG, innerXErr := subnetInstance.(*operations.Subnet).UnsafeCreateSecurityGroups(context.Background(), instance, false)
+			gwSG, internalSG, publicSG, innerXErr := subnetInstance.(*operations.Subnet).UnsafeCreateSecurityGroups(context.Background(), owningInstance, false)
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -191,6 +234,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 				abstractSubnet.PublicIPSecurityGroupID = publicSG.GetID()
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				sgName := gwSG.GetName()
 				derr := gwSG.Delete(context.Background(), true)
@@ -223,6 +267,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 				subnetsV1.ByID[abstractSubnet.ID] = abstractSubnet.Name
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -250,6 +295,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 					})
 				})
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -265,6 +311,7 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 				networkHostsV1.ByID = nil
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -275,13 +322,24 @@ func (tv toV21_05_0) upgradeNetworkMetadataIfNeeded(instance resources.Network) 
 			abstractNetwork.Domain = ""
 			return nil
 		} else {
-			logrus.Tracef("metadata of Network '%s' is up to date", instance.GetName())
+			logrus.Tracef("metadata of Network '%s' is up to date", currentInstance.GetName())
 		}
 
 		// called when nothing has been changed, to prevent useless metadata update
 		return fail.AlteredNothingError()
 	})
-	return xerr
+	if xerr != nil {
+		return xerr
+	}
+
+	// delete network in metadata of owningInstance is different than currentInstance
+	if owningInstance != currentInstance {
+		xerr = currentInstance.(*operations.Network).MetadataCore.Delete()
+		if xerr != nil {
+			return xerr
+		}
+	}
+	return nil
 }
 
 func (tv toV21_05_0) upgradeHosts(svc iaas.Service) fail.Error {
@@ -303,9 +361,17 @@ func (tv toV21_05_0) upgradeHosts(svc iaas.Service) fail.Error {
 
 // upgradeHostMetadataIfNeeded upgrades Host properties if needed
 func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail.Error {
-	xerr := instance.Alter(func(_ data.Clonable, props *serialize.JSONProperties) fail.Error {
+	xerr := instance.Alter(func(clonable data.Clonable, props *serialize.JSONProperties) fail.Error {
 		if !props.Lookup(hostproperty.NetworkV2) {
 			logrus.Tracef("Upgrading metadata of Host '%s'", instance.GetName())
+
+			abstractHostCore, ok := clonable.(*abstract.HostCore)
+			if !ok {
+				return fail.InconsistentError("'*abstract.HostCore' expected, '%s' provided", reflect.TypeOf(clonable).String())
+			}
+			if abstractHostCore.SSHPort == 0 {
+				abstractHostCore.SSHPort = 22
+			}
 
 			// upgrade hostproperty.NetworkV1 to hostproperty.NetworkV2
 			var hnV1 *propertiesv1.HostNetwork
@@ -318,6 +384,7 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -328,22 +395,22 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 					return fail.InconsistentError("'*propertiesv2.HostNetworking' expected, '%s' provided", reflect.TypeOf(clonable).String())
 				}
 
-				networkInstance, innerXErr := operations.LoadNetwork(instance.GetService(), hnV1.DefaultNetworkID)
-				if innerXErr != nil {
-					return innerXErr
-				}
-
-				defer networkInstance.Released()
-				subnetInstance, innerXErr := operations.LoadSubnet(instance.GetService(), hnV1.DefaultNetworkID, networkInstance.GetName())
+				subnetInstance, innerXErr := operations.LoadSubnet(instance.GetService(), "", hnV1.DefaultNetworkID)
 				if innerXErr != nil {
 					return innerXErr
 				}
 
 				defer subnetInstance.Released()
+				// subnetInstance, innerXErr := operations.LoadSubnet(instance.GetService(), hnV1.DefaultNetworkID, subnetInstance.GetName())
+				// if innerXErr != nil {
+				// 	return innerXErr
+				// }
+				//
+				// defer subnetInstance.Released()
 
 				hostNetworkingV2.DefaultSubnetID = subnetInstance.GetID()
-				hostNetworkingV2.IPv4Addresses = map[string]string{subnetInstance.GetID(): hnV1.IPv4Addresses[networkInstance.GetID()]}
-				hostNetworkingV2.IPv6Addresses = map[string]string{subnetInstance.GetID(): hnV1.IPv6Addresses[networkInstance.GetID()]}
+				hostNetworkingV2.IPv4Addresses = map[string]string{subnetInstance.GetID(): hnV1.IPv4Addresses[subnetInstance.GetID()]}
+				hostNetworkingV2.IPv6Addresses = map[string]string{subnetInstance.GetID(): hnV1.IPv6Addresses[subnetInstance.GetID()]}
 				hostNetworkingV2.IsGateway = hnV1.IsGateway
 				hostNetworkingV2.SubnetsByID = map[string]string{subnetInstance.GetID(): subnetInstance.GetName()}
 				hostNetworkingV2.SubnetsByName = map[string]string{subnetInstance.GetName(): subnetInstance.GetID()}
@@ -351,6 +418,7 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 				hostNetworkingV2.PublicIPv6 = hnV1.PublicIPv6
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -366,6 +434,7 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -396,6 +465,7 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 				}
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -410,6 +480,7 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 				hostDescV1.Tenant = instance.GetService().GetName()
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -420,12 +491,14 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 		logrus.Tracef("Host '%s' is up to date", instance.GetName())
 		return fail.AlteredNothingError()
 	})
+	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		return xerr
 	}
 
 	// Make sure host is referenced in Subnet
 	isGateway, xerr := instance.IsGateway()
+	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
 		return xerr
 	}
@@ -443,11 +516,13 @@ func (tv toV21_05_0) upgradeHostMetadataIfNeeded(instance *operations.Host) fail
 				return innerXErr
 			})
 		})
+		xerr = debug.InjectPlannedFail(xerr)
 		if xerr != nil {
 			return xerr
 		}
 
 		xerr = subnetInstance.AdoptHost(context.Background(), instance)
+		xerr = debug.InjectPlannedFail(xerr)
 		if xerr != nil {
 			return xerr
 		}
@@ -523,6 +598,7 @@ func (tv toV21_05_0) upgradeClusterNodesPropertyIfNeeded(instance *operations.Cl
 				}
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -580,6 +656,7 @@ func (tv toV21_05_0) upgradeClusterNodesPropertyIfNeeded(instance *operations.Cl
 				}
 				return nil
 			})
+			innerXErr = debug.InjectPlannedFail(innerXErr)
 			if innerXErr != nil {
 				return innerXErr
 			}
@@ -654,12 +731,14 @@ func (tv toV21_05_0) upgradeClusterNetworkPropertyIfNeeded(instance *operations.
 				}
 
 				networkInstance, innerXErr := operations.LoadNetwork(instance.GetService(), networkV2.NetworkID)
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}
 
 				defer networkInstance.Released()
 				subnetInstance, innerXErr := operations.LoadSubnet(instance.GetService(), networkInstance.GetName(), networkInstance.GetName())
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}
@@ -696,12 +775,14 @@ func (tv toV21_05_0) upgradeClusterNetworkPropertyIfNeeded(instance *operations.
 				}
 
 				networkInstance, innerXErr := operations.LoadNetwork(instance.GetService(), networkV1.NetworkID)
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}
 
 				defer networkInstance.Released()
 				subnetInstance, innerXErr := operations.LoadSubnet(instance.GetService(), networkInstance.GetName(), networkInstance.GetName())
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}
@@ -722,6 +803,7 @@ func (tv toV21_05_0) upgradeClusterNetworkPropertyIfNeeded(instance *operations.
 				return nil
 			})
 		}
+		innerXErr = debug.InjectPlannedFail(innerXErr)
 		if innerXErr != nil {
 			return innerXErr
 		}
@@ -814,6 +896,7 @@ func (tv toV21_05_0) cleanupDeprecatedNetworkMetadata(svc iaas.Service) fail.Err
 	logrus.Infof("Cleaning up deprecated metadata of Networks...")
 	return instance.Browse(context.Background(), func(an *abstract.Network) fail.Error {
 		networkInstance, innerXErr := operations.LoadNetwork(svc, an.ID)
+		innerXErr = debug.InjectPlannedFail(innerXErr)
 		if innerXErr != nil {
 			return innerXErr
 		}
@@ -845,6 +928,7 @@ func (tv toV21_05_0) cleanupDeprecatedHostMetadata(svc iaas.Service) fail.Error 
 	logrus.Infof("Cleaning up deprecated metadata of Hosts...")
 	return instance.Browse(context.Background(), func(ahc *abstract.HostCore) fail.Error {
 		hostInstance, innerXErr := operations.LoadHost(svc, ahc.ID)
+		innerXErr = debug.InjectPlannedFail(innerXErr)
 		if innerXErr != nil {
 			return innerXErr
 		}
@@ -861,6 +945,10 @@ func (tv toV21_05_0) cleanupDeprecatedHostMetadata(svc iaas.Service) fail.Error 
 					_ = hostNetworkingV1.Replace(&propertiesv1.HostNetwork{})
 					return nil
 				})
+				innerXErr = debug.InjectPlannedFail(innerXErr)
+				if innerXErr != nil {
+					return innerXErr
+				}
 			}
 
 			if props.Lookup(hostproperty.SizingV1) {
@@ -873,6 +961,10 @@ func (tv toV21_05_0) cleanupDeprecatedHostMetadata(svc iaas.Service) fail.Error 
 					_ = hostSizingV1.Replace(&propertiesv1.HostSizing{})
 					return nil
 				})
+				innerXErr = debug.InjectPlannedFail(innerXErr)
+				if innerXErr != nil {
+					return innerXErr
+				}
 			}
 
 			return nil
@@ -889,6 +981,7 @@ func (tv toV21_05_0) cleanupDeprecatedClusterMetadata(svc iaas.Service) fail.Err
 	logrus.Infof("Cleaning up deprecated metadata of Clusters...")
 	return instance.Browse(context.Background(), func(aci *abstract.ClusterIdentity) fail.Error {
 		clusterInstance, innerXErr := operations.LoadCluster(svc, aci.Name)
+		innerXErr = debug.InjectPlannedFail(innerXErr)
 		if innerXErr != nil {
 			return innerXErr
 		}
@@ -919,6 +1012,7 @@ func (tv toV21_05_0) cleanupDeprecatedClusterMetadata(svc iaas.Service) fail.Err
 					_ = nodesV1.Replace(&propertiesv1.ClusterNodes{})
 					return nil
 				})
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}
@@ -933,6 +1027,7 @@ func (tv toV21_05_0) cleanupDeprecatedClusterMetadata(svc iaas.Service) fail.Err
 					_ = networkV1.Replace(&propertiesv1.ClusterNetwork{})
 					return nil
 				})
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}
@@ -946,6 +1041,7 @@ func (tv toV21_05_0) cleanupDeprecatedClusterMetadata(svc iaas.Service) fail.Err
 					_ = networkV2.Replace(&propertiesv2.ClusterNetwork{})
 					return nil
 				})
+				innerXErr = debug.InjectPlannedFail(innerXErr)
 				if innerXErr != nil {
 					return innerXErr
 				}

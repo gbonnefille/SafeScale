@@ -152,6 +152,12 @@ func (instance *volume) IsNull() bool {
 
 // carry overloads rv.core.Carry() to add Volume to service cache
 func (instance *volume) carry(clonable data.Clonable) (xerr fail.Error) {
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		return fail.InvalidInstanceContentError("instance", "is not null value, cannot overwrite")
+	}
 	if clonable == nil {
 		return fail.InvalidParameterCannotBeNilError("clonable")
 	}
@@ -259,8 +265,8 @@ func (instance *volume) GetAttachments() (_ *propertiesv1.VolumeAttachments, xer
 func (instance *volume) Browse(ctx context.Context, callback func(*abstract.Volume) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	// Note: Browse is intended to be callable from null value, so do not validate instance
-	if instance == nil || instance.IsNull() {
+	// Note: Browse is intended to be callable from null value, so do not validate instance with .IsNull()
+	if instance == nil {
 		return fail.InvalidInstanceError()
 	}
 	if ctx == nil {
@@ -406,8 +412,16 @@ func (instance *volume) Delete(ctx context.Context) (xerr fail.Error) {
 func (instance *volume) Create(ctx context.Context, req abstract.VolumeRequest) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if instance == nil || instance.IsNull() {
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
+	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		volumeName := instance.GetName()
+		if volumeName != "" {
+			return fail.NotAvailableError("already carrying Subnet '%s'", volumeName)
+		}
+		return fail.InvalidInstanceContentError("instance", "is not null value")
 	}
 	if ctx == nil {
 		return fail.InvalidParameterError("ctx", "cannot be nil")
@@ -936,7 +950,9 @@ func listAttachedDevices(ctx context.Context, host resources.Host) (_ mapset.Set
 	disks := strings.Split(stdout, "\n")
 	set := mapset.NewThreadUnsafeSet()
 	for _, k := range disks {
-		set.Add(k)
+		if k != "" {
+			set.Add(k)
+		}
 	}
 	return set, nil
 }

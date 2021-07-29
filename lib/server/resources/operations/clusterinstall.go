@@ -431,15 +431,16 @@ func (instance *Cluster) RemoveFeature(ctx context.Context, name string, vars da
 // ExecuteScript executes the script template with the parameters on target Host
 func (instance *Cluster) ExecuteScript(ctx context.Context, tmplName string, data map[string]interface{}, host resources.Host) (_ int, _ string, _ string, xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
+	const invalid = -1
 
 	if instance == nil || instance.IsNull() {
-		return -1, "", "", fail.InvalidInstanceError()
+		return invalid, "", "", fail.InvalidInstanceError()
 	}
 	if tmplName == "" {
-		return -1, "", "", fail.InvalidParameterError("tmplName", "cannot be empty string")
+		return invalid, "", "", fail.InvalidParameterError("tmplName", "cannot be empty string")
 	}
 	if host == nil {
-		return -1, "", "", fail.InvalidParameterCannotBeNilError("host")
+		return invalid, "", "", fail.InvalidParameterCannotBeNilError("host")
 	}
 
 	task, xerr := concurrency.TaskFromContext(ctx)
@@ -452,7 +453,7 @@ func (instance *Cluster) ExecuteScript(ctx context.Context, tmplName string, dat
 		}
 	}
 	if xerr != nil {
-		return -1, "", "", xerr
+		return invalid, "", "", xerr
 	}
 
 	tracer := debug.NewTracer(task, tracing.ShouldTrace("resources.cluster"), "('%s')", host.GetName()).Entering()
@@ -462,14 +463,14 @@ func (instance *Cluster) ExecuteScript(ctx context.Context, tmplName string, dat
 	box, err := getTemplateBox()
 	err = debug.InjectPlannedError(err)
 	if err != nil {
-		return -1, "", "", fail.ConvertError(err)
+		return invalid, "", "", fail.ConvertError(err)
 	}
 
 	// Configures reserved_BashLibrary template var
 	bashLibrary, xerr := system.GetBashLibrary()
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
-		return -1, "", "", xerr
+		return invalid, "", "", xerr
 	}
 	data["reserved_BashLibrary"] = bashLibrary
 
@@ -491,7 +492,7 @@ func (instance *Cluster) ExecuteScript(ctx context.Context, tmplName string, dat
 	script, path, xerr := realizeTemplate(box, tmplName, data, tmplName)
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
-		return -1, "", "", fail.Wrap(xerr, "failed to realize template '%s'", tmplName)
+		return invalid, "", "", fail.Wrap(xerr, "failed to realize template '%s'", tmplName)
 	}
 
 	hidesOutput := strings.Contains(script, "set +x\n")
@@ -504,11 +505,11 @@ func (instance *Cluster) ExecuteScript(ctx context.Context, tmplName string, dat
 
 	// Uploads the script into remote file
 	rfcItem := remotefile.Item{Remote: path}
-	xerr = rfcItem.UploadString(task.GetContext(), script, host)
+	xerr = rfcItem.UploadString(task.Context(), script, host)
 	_ = os.Remove(rfcItem.Local)
 	xerr = debug.InjectPlannedFail(xerr)
 	if xerr != nil {
-		return -1, "", "", xerr
+		return invalid, "", "", xerr
 	}
 
 	// executes remote file
@@ -518,7 +519,35 @@ func (instance *Cluster) ExecuteScript(ctx context.Context, tmplName string, dat
 	} else {
 		cmd = fmt.Sprintf("sudo -- bash -c 'sync; chmod u+rx %s; bash -c %s; exit ${PIPESTATUS}'", path, path)
 	}
-	return host.Run(ctx, cmd, outputs.COLLECT, temporal.GetConnectionTimeout(), 2*temporal.GetLongOperationTimeout())
+
+	// If is 126, try again 6 times, if not return the error
+	rounds := 10
+	for {
+		rc, stdout, stderr, err := host.Run(ctx, cmd, outputs.COLLECT, temporal.GetConnectionTimeout(), 2*temporal.GetLongOperationTimeout())
+		if rc == 126 {
+			logrus.Debugf("Text busy happened")
+		}
+
+		if rc != 126 || rounds == 0 {
+			if rc == 126 {
+				logrus.Warnf("Text busy killed the script")
+			}
+			return rc, stdout, stderr, err
+		}
+
+		if !(strings.Contains(stdout, "bad interpreter") || strings.Contains(stderr, "bad interpreter")) {
+			if err == nil {
+				return rc, stdout, stderr, err
+			}
+
+			if !strings.Contains(err.Error(), "bad interpreter") {
+				return rc, stdout, stderr, err
+			}
+		}
+
+		rounds = rounds - 1
+		time.Sleep(temporal.GetMinDelay())
+	}
 }
 
 // installNodeRequirements ...

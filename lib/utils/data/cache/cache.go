@@ -91,11 +91,6 @@ func (instance *cache) Entry(key string) (*Entry, fail.Error) {
 	instance.lock.RLock()
 	defer instance.lock.RUnlock()
 
-	// If key is found in cache, returns corresponding *cache.Entry
-	if ce, ok := instance.cache[key]; ok {
-		return ce, nil
-	}
-
 	// If key is reserved, we may have to wait reservation committed or freed to determine if
 	if _, ok := instance.reserved[key]; ok {
 		ce, ok := instance.cache[key]
@@ -109,24 +104,21 @@ func (instance *cache) Entry(key string) (*Entry, fail.Error) {
 			if _, ok := instance.reserved[key]; ok {
 				return nil, fail.InconsistentError("'*cache.reservation' expected, '%s' provided", reflect.TypeOf(ce.Content()).String())
 			}
-
-			// ... and second if cache entry exists, return it
-			if ce, ok := instance.cache[key]; ok {
-				return ce, nil
-			}
 		} else {
+			// Note: there is no timeout in this select because from here, we have no clue about the time that a Free() or Commit() may take to be called
+			// FIXME: add a timeout in Reserve() that will be set from the code that know how long the operation may take
 			select {
 			case <-reservation.freed():
-				// do nothing more than returning entry not found at the end of the function
+				return nil, fail.NotFoundError("failed to find entry with key '%s' in %s cache", key, instance.GetName())
 			case <-reservation.committed():
-				ce, ok := instance.cache[key]
-				if ok {
-					return ce, nil
-				}
-				// Note: there is no timeout in this select because from here, we have no clue about the time that a Free() or Commit() may take to be called
-				// FIXME: add a timeout in Reserve() that will be set from the code that know how long the operation may take
+				// acknowledge commit, and continue
 			}
 		}
+	}
+
+	// If key is found in cache, returns corresponding *cache.Entry
+	if ce, ok := instance.cache[key]; ok {
+		return ce, nil
 	}
 
 	return nil, fail.NotFoundError("failed to find entry with key '%s' in %s cache", key, instance.GetName())
@@ -171,7 +163,7 @@ func (instance *cache) unsafeReserveEntry(key string) (xerr fail.Error) {
 
 /*
 CommitEntry fills a previously reserved entry with content
-The key retained at the end in the cache may be different to the one passed in parameter (and used previously in ReserveEntry()), because content.GetID() has to be the final key.
+The key retained at the end in the cache may be different to the one passed in parameter (and used previously in ReserveEntry()), because content.ID() has to be the final key.
 
 Returns:
 	nil, *fail.ErrNotFound: the cache entry identified by 'key' is not reserved
@@ -196,13 +188,13 @@ func (instance *cache) Commit(key string, content Cacheable) (ce *Entry, xerr fa
 }
 
 // unsafeCommitEntry is the workforce of CommitEntry, without locking
-// The key retained at the end in the cache may be different to the one passed in parameter (and used previously in ReserveEntry), because content.GetID() has to be the final key.
+// The key retained at the end in the cache may be different to the one passed in parameter (and used previously in ReserveEntry), because content.ID() has to be the final key.
 func (instance *cache) unsafeCommitEntry(key string, content Cacheable) (_ *Entry, xerr fail.Error) {
 	if _, ok := instance.reserved[key]; !ok {
 		return nil, fail.NotFoundError("the cache entry '%s' is not reserved", key)
 	}
 
-	// content may bring new key, based on content.GetID(), different from the key reserved; we have to check if this new key has not been reserved by someone else...
+	// content may bring new key, based on content.ID(), different from the key reserved; we have to check if this new key has not been reserved by someone else...
 	newContentKey := content.GetID()
 	if newContentKey != key {
 		if _, ok := instance.reserved[newContentKey]; ok {
@@ -250,7 +242,7 @@ func (instance *cache) unsafeCommitEntry(key string, content Cacheable) (_ *Entr
 	return nil, fail.InconsistentError("the reservation does not have a corresponding entry identified by '%s' in %s cache", key, instance.GetName())
 }
 
-// FreeEntry unlocks the cache entry and removes the reservation
+// Free unlocks the cache entry and removes the reservation
 // return:
 //  nil: reservation removed
 //  *fail.ErrNotAvailable: the cache entry identified by 'key' is not reserved

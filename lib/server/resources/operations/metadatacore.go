@@ -42,6 +42,10 @@ const (
 	byIDFolderName = "byID"
 	// byNameFolderName tells in what MetadataFolder to store 'byName' information
 	byNameFolderName = "byName"
+
+	NullMetadataKind = "nil"
+	NullMetadataName = "<NullCore>"
+	NullMetadataID = NullMetadataName
 )
 
 // MetadataCore contains the core functions of a persistent object
@@ -64,7 +68,7 @@ type MetadataCore struct {
 }
 
 func NullCore() *MetadataCore {
-	return &MetadataCore{kind: "nil"}
+	return &MetadataCore{kind: NullMetadataKind}
 }
 
 // NewCore creates an instance of MetadataCore
@@ -111,12 +115,12 @@ func NewCore(svc iaas.Service, kind string, path string, instance data.Clonable)
 
 // IsNull returns true if the MetadataCore instance represents the null value for MetadataCore
 func (c *MetadataCore) IsNull() bool {
-	return c == nil || (c != nil && (c.kind == "" || c.kind == "nil" || c.folder.IsNull()))
+	return c == nil || (c.kind == "" || c.kind == NullMetadataKind || c.folder.IsNull() || (c.getID() == NullMetadataID && c.getName() == NullMetadataName))
 }
 
 // GetService returns the iaas.GetService used to create/load the persistent object
 func (c *MetadataCore) GetService() iaas.Service {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil {
 		return nil
 	}
 
@@ -126,13 +130,17 @@ func (c *MetadataCore) GetService() iaas.Service {
 // GetID returns the id of the data protected
 // satisfies interface data.Identifiable
 func (c *MetadataCore) GetID() string {
-	if c == nil || (c != nil && c.IsNull()) {
-		return "<NullCore>" // FIXME: It should be a constant
+	if c == nil || c.IsNull() {
+		return NullMetadataID
 	}
 
+	return c.getID()
+}
+
+func (c *MetadataCore) getID() string {
 	id, ok := c.id.Load().(string)
 	if !ok {
-		return ""
+		return NullMetadataID
 	}
 
 	return id
@@ -141,13 +149,17 @@ func (c *MetadataCore) GetID() string {
 // GetName returns the name of the data protected
 // satisfies interface data.Identifiable
 func (c *MetadataCore) GetName() string {
-	if c == nil || (c != nil && c.IsNull()) {
-		return "<NullCore>" // FIXME: It should be a constant
+	if c == nil || c.IsNull() {
+		return NullMetadataName
 	}
 
+	return c.getName()
+}
+
+func (c *MetadataCore) getName() string {
 	name, ok := c.name.Load().(string)
 	if !ok {
-		return ""
+		return NullMetadataName
 	}
 
 	return name
@@ -156,7 +168,7 @@ func (c *MetadataCore) GetName() string {
 // GetKind returns the kind of object served
 func (c *MetadataCore) GetKind() string {
 	if c == nil {
-		return "<unknown>"
+		return NullMetadataKind
 	}
 	return c.kind
 }
@@ -165,7 +177,7 @@ func (c *MetadataCore) GetKind() string {
 func (c *MetadataCore) Inspect(callback resources.Callback) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 	if callback == nil {
@@ -174,7 +186,6 @@ func (c *MetadataCore) Inspect(callback resources.Callback) (xerr fail.Error) {
 	if c.properties == nil {
 		return fail.InvalidInstanceContentError("c.properties", "cannot be nil")
 	}
-
 
 	// Reload reloads data from Object Storage to be sure to have the last revision
 	c.lock.Lock()
@@ -199,7 +210,7 @@ func (c *MetadataCore) Inspect(callback resources.Callback) (xerr fail.Error) {
 func (c *MetadataCore) Review(callback resources.Callback) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 	if callback == nil {
@@ -223,7 +234,7 @@ func (c *MetadataCore) Review(callback resources.Callback) (xerr fail.Error) {
 func (c *MetadataCore) Alter(callback resources.Callback, options ...data.ImmutableKeyValue) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 	if callback == nil {
@@ -300,8 +311,12 @@ func (c *MetadataCore) Alter(callback resources.Callback, options ...data.Immuta
 func (c *MetadataCore) Carry(clonable data.Clonable) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	// Note: do not test with IsNull() here, it MUST be null value on call
+	if c == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !c.IsNull() {
+		return fail.InvalidRequestError("cannot carry, already carries something")
 	}
 	if clonable == nil {
 		return fail.InvalidParameterCannotBeNilError("clonable")
@@ -356,8 +371,8 @@ func (c *MetadataCore) updateIdentity() fail.Error {
 		})
 	}
 
-	c.name.Store("")
-	c.id.Store("")
+	c.name.Store(NullMetadataName)
+	c.id.Store(NullMetadataID)
 
 	// notify observers there has been changed in the instance
 	err := c.notifyObservers()
@@ -373,7 +388,8 @@ func (c *MetadataCore) updateIdentity() fail.Error {
 func (c *MetadataCore) Read(ref string) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	// Note: do not test with .IsNull() here, it may be null value on first read
+	if c == nil {
 		return fail.InvalidInstanceError()
 	}
 	if ref = strings.TrimSpace(ref); ref == "" {
@@ -402,7 +418,8 @@ func (c *MetadataCore) Read(ref string) (xerr fail.Error) {
 func (c *MetadataCore) ReadByID(id string) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	// Note: do not test with .IsNull() here, it may be null value on first read
+	if c == nil {
 		return fail.InvalidInstanceError()
 	}
 	if id = strings.TrimSpace(id); id == "" {
@@ -592,7 +609,7 @@ func (c *MetadataCore) write() fail.Error {
 
 // Reload reloads the content from the Object Storage
 func (c *MetadataCore) Reload() (xerr fail.Error) {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 
@@ -681,7 +698,7 @@ func (c *MetadataCore) reload() (xerr fail.Error) {
 func (c *MetadataCore) BrowseFolder(callback func(buf []byte) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil {
 		return fail.InvalidInstanceError()
 	}
 	if callback == nil {
@@ -705,7 +722,7 @@ func (c *MetadataCore) BrowseFolder(callback func(buf []byte) fail.Error) (xerr 
 func (c *MetadataCore) Delete() (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 
@@ -813,7 +830,7 @@ func (c *MetadataCore) Delete() (xerr fail.Error) {
 
 // Serialize serializes instance into bytes (output json code)
 func (c *MetadataCore) Serialize() (_ []byte, xerr fail.Error) {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return nil, fail.InvalidInstanceError()
 	}
 
@@ -877,7 +894,7 @@ func (c *MetadataCore) serialize() (_ []byte, xerr fail.Error) {
 func (c *MetadataCore) Deserialize(buf []byte) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 
@@ -948,8 +965,8 @@ func (c *MetadataCore) deserialize(buf []byte) (xerr fail.Error) {
 // Note: Does nothing for now, prepared for future use
 // satisfies interface data.Cacheable
 func (c *MetadataCore) Released() {
-	if c == nil || (c != nil && c.IsNull()) {
-		return // FIXME: Missing log ?
+	if c == nil || c.IsNull() {
+		return // FIXME: Missing log?
 	}
 
 	c.lock.RLock()
@@ -977,7 +994,7 @@ func (c *MetadataCore) released() {
 // Note: Does nothing for now, prepared for future use
 // satisfies interface data.Cacheable
 func (c *MetadataCore) Destroyed() {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return // FIXME: Missing log ?
 	}
 
@@ -1005,7 +1022,7 @@ func (c *MetadataCore) destroyed() {
 // AddObserver ...
 // satisfies interface data.Observable
 func (c *MetadataCore) AddObserver(o observer.Observer) error {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 	if o == nil {
@@ -1028,7 +1045,7 @@ func (c *MetadataCore) AddObserver(o observer.Observer) error {
 // NotifyObservers sends a signal to all registered Observers to notify change
 // Satisfies interface data.Observable
 func (c *MetadataCore) NotifyObservers() error {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 
@@ -1054,7 +1071,7 @@ func (c *MetadataCore) notifyObservers() error {
 
 // RemoveObserver ...
 func (c *MetadataCore) RemoveObserver(name string) error {
-	if c == nil || (c != nil && c.IsNull()) {
+	if c == nil || c.IsNull() {
 		return fail.InvalidInstanceError()
 	}
 	if name == "" {

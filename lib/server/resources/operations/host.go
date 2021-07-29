@@ -440,6 +440,12 @@ func (instance *Host) IsNull() bool {
 
 // carry ...
 func (instance *Host) carry(clonable data.Clonable) (xerr fail.Error) {
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		return fail.InvalidInstanceContentError("instance", "is not null value, cannot overwrite")
+	}
 	if clonable == nil {
 		return fail.InvalidParameterCannotBeNilError("clonable")
 	}
@@ -491,11 +497,12 @@ func (instance *Host) carry(clonable data.Clonable) (xerr fail.Error) {
 func (instance *Host) Browse(ctx context.Context, callback func(*abstract.HostCore) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
+	// Note: Browse is intended to be callable from null value, so do not validate instance with .IsNull()
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
-	}
-	if instance == nil || instance.IsNull() {
-		return fail.InvalidInstanceError()
 	}
 	if callback == nil {
 		return fail.InvalidParameterCannotBeNilError("callback")
@@ -708,15 +715,16 @@ func (instance *Host) GetState() (state hoststate.Enum) {
 func (instance *Host) Create(ctx context.Context, hostReq abstract.HostRequest, hostDef abstract.HostSizingRequirements) (_ *userdata.Content, xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if instance == nil || instance.IsNull() {
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
+	if instance == nil {
 		return nil, fail.InvalidInstanceError()
 	}
-	if ctx == nil {
-		return nil, fail.InvalidParameterCannotBeNilError("ctx")
-	}
-	hostname := instance.GetName()
-	if hostname != "" {
-		return nil, fail.NotAvailableError("already carrying Host '%s'", hostname)
+	if !instance.IsNull() {
+		hostname := instance.GetName()
+		if hostname != "" {
+			return nil, fail.NotAvailableError("already carrying Host '%s'", hostname)
+		}
+		return nil, fail.InvalidInstanceContentError("instance", "is not null value")
 	}
 
 	task, xerr := concurrency.TaskFromContext(ctx)
@@ -1758,9 +1766,16 @@ func (instance *Host) finalizeProvisioning(ctx context.Context, userdataContent 
 	}
 
 	logrus.Infof("finalizing Host provisioning of '%s': rebooting", instance.GetName())
+
 	// Reboot Host
-	command := "sudo systemctl reboot"
-	_, _, _, _ = instance.UnsafeRun(ctx, command, outputs.COLLECT, 10*time.Second, 30*time.Second)
+	command := `echo "sleep 4 ; sudo systemctl reboot" | at now`
+	rebootCtx, cancelReboot := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancelReboot()
+	_, _, _, xerr = instance.UnsafeRun(rebootCtx, command, outputs.COLLECT, 10*time.Second, 3*time.Minute)
+	if xerr != nil {
+		logrus.Debugf("there was an error sending the reboot command: %v", xerr)
+	}
+	time.Sleep(5 * time.Second)
 
 	_, xerr = instance.waitInstallPhase(ctx, userdata.PHASE2_NETWORK_AND_SECURITY, 0)
 	xerr = debug.InjectPlannedFail(xerr)
@@ -1781,8 +1796,14 @@ func (instance *Host) finalizeProvisioning(ctx context.Context, userdataContent 
 
 		// Reboot Host
 		logrus.Infof("finalizing Host provisioning of '%s' (not-gateway): rebooting", instance.GetName())
-		command = "sudo systemctl reboot"
-		_, _, _, _ = instance.UnsafeRun(ctx, command, outputs.COLLECT, 10*time.Second, 30*time.Second)
+		command = `echo "sleep 4 ; sudo systemctl reboot" | at now`
+		rebootCtx, cancelReboot := context.WithTimeout(ctx, 3*time.Minute)
+		defer cancelReboot()
+		_, _, _, xerr = instance.UnsafeRun(rebootCtx, command, outputs.COLLECT, 10*time.Second, 3*time.Minute)
+		if xerr != nil {
+			logrus.Debugf("there was an error sending the reboot command: %v", xerr)
+		}
+		time.Sleep(5 * time.Second)
 
 		_, xerr = instance.waitInstallPhase(ctx, userdata.PHASE4_SYSTEM_FIXES, 0)
 		xerr = debug.InjectPlannedFail(xerr)
@@ -2420,15 +2441,16 @@ func (instance *Host) GetSSHConfig() (_ *system.SSHConfig, xerr fail.Error) {
 // Run tries to execute command 'cmd' on the Host
 func (instance *Host) Run(ctx context.Context, cmd string, outs outputs.Enum, connectionTimeout, executionTimeout time.Duration) (_ int, _ string, _ string, xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
+	const invalid = -1
 
 	if instance == nil || instance.IsNull() {
-		return 0, "", "", fail.InvalidInstanceError()
+		return invalid, "", "", fail.InvalidInstanceError()
 	}
 	if ctx == nil {
-		return -1, "", "", fail.InvalidParameterCannotBeNilError("ctx")
+		return invalid, "", "", fail.InvalidParameterCannotBeNilError("ctx")
 	}
 	if cmd == "" {
-		return -1, "", "", fail.InvalidParameterError("cmd", "cannot be empty string")
+		return invalid, "", "", fail.InvalidParameterError("cmd", "cannot be empty string")
 	}
 
 	task, xerr := concurrency.TaskFromContext(ctx)
@@ -2441,11 +2463,11 @@ func (instance *Host) Run(ctx context.Context, cmd string, outs outputs.Enum, co
 		}
 	}
 	if xerr != nil {
-		return -1, "", "", xerr
+		return invalid, "", "", xerr
 	}
 
 	if task.Aborted() {
-		return 0, "", "", fail.AbortedError(nil, "aborted")
+		return invalid, "", "", fail.AbortedError(nil, "aborted")
 	}
 
 	tracer := debug.NewTracer(task, tracing.ShouldTrace("resources.host"), "(cmd='%s', outs=%s)", outs.String()).Entering()
@@ -2460,18 +2482,19 @@ func (instance *Host) Run(ctx context.Context, cmd string, outs outputs.Enum, co
 // Pull downloads a file from Host
 func (instance *Host) Pull(ctx context.Context, target, source string, timeout time.Duration) (_ int, _ string, _ string, xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
+	const invalid = -1
 
 	if instance == nil || instance.IsNull() {
-		return 0, "", "", fail.InvalidInstanceError()
+		return invalid, "", "", fail.InvalidInstanceError()
 	}
 	if ctx == nil {
-		return 0, "", "", fail.InvalidParameterCannotBeNilError("ctx")
+		return invalid, "", "", fail.InvalidParameterCannotBeNilError("ctx")
 	}
 	if target == "" {
-		return 0, "", "", fail.InvalidParameterCannotBeEmptyStringError("target")
+		return invalid, "", "", fail.InvalidParameterCannotBeEmptyStringError("target")
 	}
 	if source == "" {
-		return 0, "", "", fail.InvalidParameterCannotBeEmptyStringError("source")
+		return invalid, "", "", fail.InvalidParameterCannotBeEmptyStringError("source")
 	}
 
 	task, xerr := concurrency.TaskFromContext(ctx)
@@ -2484,11 +2507,11 @@ func (instance *Host) Pull(ctx context.Context, target, source string, timeout t
 		}
 	}
 	if xerr != nil {
-		return -1, "", "", xerr
+		return invalid, "", "", xerr
 	}
 
 	if task.Aborted() {
-		return 0, "", "", fail.AbortedError(nil, "aborted")
+		return invalid, "", "", fail.AbortedError(nil, "aborted")
 	}
 
 	tracer := debug.NewTracer(task, tracing.ShouldTrace("resources.host"), "(target=%s,source=%s)", target, source).Entering()
@@ -2527,12 +2550,13 @@ func (instance *Host) Pull(ctx context.Context, target, source string, timeout t
 // Push uploads a file to Host
 func (instance *Host) Push(ctx context.Context, source, target, owner, mode string, timeout time.Duration) (_ int, _ string, _ string, xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
+	const invalid = -1
 
 	if instance == nil || instance.IsNull() {
-		return 0, "", "", fail.InvalidInstanceError()
+		return invalid, "", "", fail.InvalidInstanceError()
 	}
 	if ctx == nil {
-		return 0, "", "", fail.InvalidParameterCannotBeNilError("ctx")
+		return invalid, "", "", fail.InvalidParameterCannotBeNilError("ctx")
 	}
 
 	task, xerr := concurrency.TaskFromContext(ctx)
@@ -2545,11 +2569,11 @@ func (instance *Host) Push(ctx context.Context, source, target, owner, mode stri
 		}
 	}
 	if xerr != nil {
-		return -1, "", "", xerr
+		return invalid, "", "", xerr
 	}
 
 	if task.Aborted() {
-		return 0, "", "", fail.AbortedError(nil, "aborted")
+		return invalid, "", "", fail.AbortedError(nil, "aborted")
 	}
 
 	tracer := debug.NewTracer(task, tracing.ShouldTrace("resources.host"), "(source=%s, target=%s, owner=%s, mode=%s)", source, target, owner, mode).Entering()

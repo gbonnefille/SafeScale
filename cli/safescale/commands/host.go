@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/CS-SI/SafeScale/lib/server/resources/operations/converters"
+	"github.com/CS-SI/SafeScale/lib/system"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/grpc/codes"
@@ -255,7 +256,7 @@ May be used multiple times, the first occurrence becoming the default subnet by 
 		},
 		&cli.StringFlag{
 			Name:  "os",
-			Value: "Ubuntu 18.04",
+			// Value: "Ubuntu 20.04",
 			Usage: "Image name for the host",
 		},
 		&cli.BoolFlag{
@@ -453,8 +454,35 @@ var hostSSH = &cli.Command{
 			err = fail.FromGRPCStatus(err)
 			return clitools.FailureResponse(clitools.ExitOnRPC(strprocess.Capitalize(client.DecorateTimeoutError(err, "ssh config of host", false).Error())))
 		}
-		return clitools.SuccessResponse(resp)
+
+		out, xerr := formatSSHConfig(*resp)
+		if xerr != nil {
+			return clitools.FailureResponse(clitools.ExitOnErrorWithMessage(exitcode.Run, strprocess.Capitalize(xerr.Error())))
+		}
+		return clitools.SuccessResponse(out)
 	},
+}
+
+func formatSSHConfig(in system.SSHConfig) (map[string]interface{}, fail.Error) {
+	jsoned, err := json.Marshal(&in)
+	if err != nil {
+		return nil, fail.ConvertError(err)
+	}
+	out := map[string]interface{}{}
+	err = json.Unmarshal(jsoned, &out)
+	if err != nil {
+		return nil, fail.ConvertError(err)
+	}
+	if anon, ok := out["primary_gateway_config"]; ok && anon == nil {
+		delete(out, "primary_gateway_config")
+	}
+	if anon, ok := out["secondary_gateway_config"]; ok && anon == nil {
+		delete(out, "secondary_gateway_config")
+	}
+	if anon, ok := out["port"]; ok && anon.(float64) == 0 {
+		out["port"] = 22
+	}
+	return out, nil
 }
 
 // hostListFeaturesCommand handles 'safescale host list-features'

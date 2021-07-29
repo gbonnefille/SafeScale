@@ -180,8 +180,11 @@ func (instance *SecurityGroup) IsNull() bool {
 
 // Carry overloads rv.core.Carry() to add Volume to service cache
 func (instance *SecurityGroup) carry(clonable data.Clonable) (xerr fail.Error) {
-	if instance == nil || instance.IsNull() {
+	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		return fail.InvalidInstanceContentError("instance", "is not null value, cannot overwrite")
 	}
 	if clonable == nil {
 		return fail.InvalidParameterCannotBeNilError("clonable")
@@ -234,7 +237,10 @@ func (instance *SecurityGroup) carry(clonable data.Clonable) (xerr fail.Error) {
 func (instance *SecurityGroup) Browse(ctx context.Context, callback func(*abstract.SecurityGroup) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	// Note: Browse is intended to be callable from null value, so do not validate instance
+	// Note: Browse is intended to be callable from null value, so do not validate instance with .IsNull()
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
 	}
@@ -284,8 +290,16 @@ func (instance *SecurityGroup) Browse(ctx context.Context, callback func(*abstra
 func (instance *SecurityGroup) Create(ctx context.Context, networkID, name, description string, rules abstract.SecurityGroupRules) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if instance == nil || instance.IsNull() {
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
+	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		sgName := instance.GetName()
+		if sgName != "" {
+			return fail.NotAvailableError("already carrying SecurityGroup '%s'", sgName)
+		}
+		return fail.InvalidInstanceContentError("instance", "is not null value")
 	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
@@ -485,7 +499,7 @@ func (instance *SecurityGroup) unbindFromHosts(ctx context.Context, in *properti
 			}
 		}
 
-		if count, xerr := tg.GetStarted(); xerr == nil && count > 0 {
+		if count, xerr := tg.Started(); xerr == nil && count > 0 {
 			_, xerr = tg.WaitGroup()
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {
@@ -493,7 +507,7 @@ func (instance *SecurityGroup) unbindFromHosts(ctx context.Context, in *properti
 			}
 		}
 
-		if count, xerr := tg.GetStarted(); xerr == nil && count > 0 {
+		if count, xerr := tg.Started(); xerr == nil && count > 0 {
 			_, xerr = tg.WaitGroup()
 			xerr = debug.InjectPlannedFail(xerr)
 			if xerr != nil {

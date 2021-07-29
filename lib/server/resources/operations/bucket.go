@@ -129,6 +129,12 @@ func (instance *bucket) IsNull() bool {
 
 // carry ...
 func (instance *bucket) carry(clonable data.Clonable) (xerr fail.Error) {
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		return fail.InvalidInstanceContentError("instance", "is not null value, cannot overwrite")
+	}
 	if clonable == nil {
 		return fail.InvalidParameterCannotBeNilError("clonable")
 	}
@@ -272,8 +278,16 @@ func (instance *bucket) GetMountPoint(ctx context.Context) (string, fail.Error) 
 func (instance *bucket) Create(ctx context.Context, name string) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if instance == nil || instance.IsNull() {
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
+	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		bucketName := instance.GetName()
+		if bucketName != "" {
+			return fail.NotAvailableError("already carrying Share '%s'", bucketName)
+		}
+		return fail.InvalidInstanceContentError("s", "is not null value")
 	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")

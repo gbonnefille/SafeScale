@@ -126,6 +126,7 @@ func LoadCluster(svc iaas.Service, name string) (rc resources.Cluster, xerr fail
 			if innerXErr != nil {
 				return nil, innerXErr
 			}
+
 			// TODO: core.Read() does not check communication failure, side effect of limitations of Stow (waiting for stow replacement)
 			if innerXErr = rc.Read(name); innerXErr != nil {
 				return nil, innerXErr
@@ -482,6 +483,12 @@ func (instance *Cluster) IsNull() bool {
 
 // carry ...
 func (instance *Cluster) carry(clonable data.Clonable) (xerr fail.Error) {
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		return fail.InvalidInstanceContentError("instance", "is not null value, cannot overwrite")
+	}
 	identifiable, ok := clonable.(data.Identifiable)
 	if !ok {
 		return fail.InvalidParameterError("clonable", "must also satisfy interface 'data.Identifiable'")
@@ -530,8 +537,16 @@ func (instance *Cluster) carry(clonable data.Clonable) (xerr fail.Error) {
 func (instance *Cluster) Create(ctx context.Context, req abstract.ClusterRequest) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	if instance == nil || instance.IsNull() {
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
+	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		clusterName := instance.GetName()
+		if clusterName != "" {
+			return fail.NotAvailableError("already carrying Cluster '%s'", clusterName)
+		}
+		return fail.InvalidInstanceContentError("instance", "is not null value")
 	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
@@ -623,7 +638,10 @@ func (instance *Cluster) bootstrap(flavor clusterflavor.Enum) (xerr fail.Error) 
 func (instance *Cluster) Browse(ctx context.Context, callback func(*abstract.ClusterIdentity) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	// Note: Browse is intended to be callable from null value, so do not validate instance
+	// Note: Browse is intended to be callable from null value, so do not validate instance with .IsNull()
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
 	}
@@ -1382,6 +1400,14 @@ func (instance *Cluster) AddNodes(ctx context.Context, count uint, def abstract.
 		return nil, fail.NewErrorWithCause(xerr, "errors occurred on node%s addition", strprocess.Plural(uint(len(errors))))
 	}
 
+	// configure what has to be done Cluster-wide
+	if instance.makers.ConfigureCluster != nil {
+		xerr = instance.makers.ConfigureCluster(ctx, instance)
+		if xerr != nil {
+			return nil, xerr
+		}
+	}
+
 	// Now configure new nodes
 	xerr = instance.configureNodesFromList(task, nodes)
 	xerr = debug.InjectPlannedFail(xerr)
@@ -1396,7 +1422,7 @@ func (instance *Cluster) AddNodes(ctx context.Context, count uint, def abstract.
 		return nil, xerr
 	}
 
-	hosts := make([]resources.Host, len(nodes))
+	hosts := make([]resources.Host, 0, len(nodes))
 	for _, v := range nodes {
 		hostInstance, xerr := LoadHost(instance.GetService(), v.ID)
 		if xerr != nil {

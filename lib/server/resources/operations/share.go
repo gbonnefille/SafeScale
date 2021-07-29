@@ -202,6 +202,12 @@ func (instance *Share) IsNull() bool {
 
 // carry creates metadata and add Volume to service cache
 func (instance *Share) carry(clonable data.Clonable) (xerr fail.Error) {
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		return fail.InvalidInstanceContentError("instance", "is not null value, cannot overwrite")
+	}
 	if clonable == nil {
 		return fail.InvalidParameterCannotBeNilError("clonable")
 	}
@@ -253,7 +259,10 @@ func (instance *Share) carry(clonable data.Clonable) (xerr fail.Error) {
 func (instance *Share) Browse(ctx context.Context, callback func(string, string) fail.Error) (xerr fail.Error) {
 	defer fail.OnPanic(&xerr)
 
-	// Note: Browse is intended to be callable from null value, so do not validate instance
+	// Note: Browse is intended to be callable from null value, so do not validate instance with .IsNull()
+	if instance == nil {
+		return fail.InvalidInstanceError()
+	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
 	}
@@ -312,8 +321,16 @@ func (instance *Share) Create(
 
 	defer fail.OnPanic(&xerr)
 
-	if instance == nil || instance.IsNull() {
+	// note: do not test IsNull() here, it's expected to be IsNull() actually
+	if instance == nil {
 		return fail.InvalidInstanceError()
+	}
+	if !instance.IsNull() {
+		shareName := instance.GetName()
+		if shareName != "" {
+			return fail.NotAvailableError("already carrying Share '%s'", shareName)
+		}
+		return fail.InvalidInstanceContentError("instance", "is not null value")
 	}
 	if ctx == nil {
 		return fail.InvalidParameterCannotBeNilError("ctx")
@@ -651,7 +668,7 @@ func (instance *Share) Mount(ctx context.Context, target resources.Host, path st
 		return nil, xerr
 	}
 
-	// serverID = rhServer.GetID()
+	// serverID = rhServer.ID()
 	// serverName = rhServer.GetName()
 	serverPrivateIP, xerr := rhServer.GetPrivateIP()
 	if xerr != nil {
@@ -1040,7 +1057,7 @@ func (instance *Share) Delete(ctx context.Context) (xerr fail.Error) {
 	)
 
 	// -- Retrieve info about the Share --
-	// Note: we do not use GetName() and GetID() to avoid 2 consecutive instance.Inspect()
+	// Note: we do not use GetName() and ID() to avoid 2 consecutive instance.Inspect()
 	xerr = instance.Review(func(clonable data.Clonable, _ *serialize.JSONProperties) fail.Error {
 		si, ok := clonable.(*ShareIdentity)
 		if !ok {

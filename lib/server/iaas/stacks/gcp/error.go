@@ -23,6 +23,7 @@ import (
 	"reflect"
 
 	"github.com/sirupsen/logrus"
+	"google.golang.org/api/compute/v1"
 
 	"github.com/CS-SI/SafeScale/lib/utils/debug/callstack"
 	"github.com/CS-SI/SafeScale/lib/utils/fail"
@@ -30,7 +31,33 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-// normalizeError translates AWS error to SafeScale one
+func normalizeOperationError(oe *compute.OperationError) fail.Error {
+	if oe == nil {
+		return nil
+	}
+
+	if len(oe.Errors) == 0 {
+		return nil
+	}
+
+	var errors []error
+	for _, operr := range oe.Errors {
+		if operr != nil {
+			ne := fail.NewError(operr.Message)
+			ne.Annotate("code", operr.Code)
+
+			errors = append(errors, ne)
+		}
+	}
+
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return fail.NewErrorList(errors)
+}
+
+// normalizeError translates GCP error to SafeScale one
 func normalizeError(err error) fail.Error {
 	if err == nil {
 		return nil
@@ -44,13 +71,32 @@ func normalizeError(err error) fail.Error {
 	case net.Error: // also go connection errors
 		return fail.NewErrorWithCause(cerr)
 	case *googleapi.Error:
+		message := cerr.Message
 		switch cerr.Code {
 		case 400:
-			return fail.InvalidRequestError(cerr.Message)
+			return fail.InvalidRequestError(message)
+		case 401:
+			return fail.NotAuthenticatedError(message)
+		case 403:
+			return fail.ForbiddenError(message)
 		case 404:
-			return fail.NotFoundError(cerr.Message)
+			return fail.NotFoundError(message)
+		case 408:
+			return fail.TimeoutError(err, 0)
 		case 409:
-			return fail.DuplicateError(cerr.Message)
+			return fail.InvalidRequestError(message)
+		case 410:
+			return fail.NotFoundError(message)
+		case 425:
+			return fail.OverloadError(message)
+		case 429:
+			return fail.OverloadError(message)
+		case 500:
+			return fail.ExecutionError(nil, message)
+		case 503:
+			return fail.NotAvailableError(message)
+		case 504:
+			return fail.NotAvailableError(message)
 		default:
 			logrus.Debugf(callstack.DecorateWith("", "", fmt.Sprintf("Unhandled error (%s) received from gcp provider: %s", reflect.TypeOf(err).String(), err.Error()), 0))
 			return fail.UnknownError("from gcp driver, type='%s', error='%s'", reflect.TypeOf(err), err.Error())

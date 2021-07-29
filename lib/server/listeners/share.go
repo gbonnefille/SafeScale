@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/CS-SI/SafeScale/lib/utils/debug/tracing"
-
 	"github.com/asaskevich/govalidator"
 	googleprotobuf "github.com/golang/protobuf/ptypes/empty"
 	"github.com/sirupsen/logrus"
@@ -34,6 +32,7 @@ import (
 	"github.com/CS-SI/SafeScale/lib/server/resources/operations/converters"
 	srvutils "github.com/CS-SI/SafeScale/lib/server/utils"
 	"github.com/CS-SI/SafeScale/lib/utils/debug"
+	"github.com/CS-SI/SafeScale/lib/utils/debug/tracing"
 	"github.com/CS-SI/SafeScale/lib/utils/fail"
 )
 
@@ -97,7 +96,7 @@ func (s *ShareListener) Create(ctx context.Context, in *protocol.ShareDefinition
 		return nil, xerr
 	}
 
-	xerr = rs.Create(task.GetContext(), shareName, rh, sharePath, in.OptionsAsString)
+	xerr = rs.Create(task.Context(), shareName, rh, sharePath, in.OptionsAsString)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -148,7 +147,7 @@ func (s *ShareListener) Delete(ctx context.Context, in *protocol.Reference) (emp
 		return empty, xerr
 	}
 
-	if xerr = rs.Delete(task.GetContext()); xerr != nil {
+	if xerr = rs.Delete(task.Context()); xerr != nil {
 		return empty, xerr
 	}
 

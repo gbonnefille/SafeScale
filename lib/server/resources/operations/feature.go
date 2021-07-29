@@ -144,6 +144,8 @@ func NewFeature(svc iaas.Service, name string) (_ resources.Feature, xerr fail.E
 
 	v := viper.New()
 	v.AddConfigPath(".")
+	v.AddConfigPath("./features")
+	v.AddConfigPath("./.safescale/features")
 	v.AddConfigPath("$HOME/.safescale/features")
 	v.AddConfigPath("$HOME/.config/safescale/features")
 	v.AddConfigPath("/etc/safescale/features")
@@ -177,6 +179,8 @@ func NewFeature(svc iaas.Service, name string) (_ resources.Feature, xerr fail.E
 		}
 		xerr = nil
 	}
+
+	logrus.Debugf("loaded feature '%s' (%s)", casted.GetDisplayFilename(), casted.GetFilename())
 
 	// if we can log the sha256 of the feature, do it
 	filename := v.ConfigFileUsed()
