@@ -30,6 +30,7 @@ import (
 	"github.com/CS-SI/SafeScale/lib/utils/data/observer"
 	"github.com/CS-SI/SafeScale/lib/utils/debug/callstack"
 	"github.com/CS-SI/SafeScale/lib/utils/fail"
+	"github.com/CS-SI/SafeScale/lib/utils/temporal"
 )
 
 // Cache interface describing what a struct must implement to be considered as a cache
@@ -79,7 +80,7 @@ func (instance *cache) GetName() string {
 	return instance.name.Load().(string)
 }
 
-// GetEntry returns a cache entry from its key
+// Entry returns a cache entry from its key
 func (instance *cache) Entry(key string) (*Entry, fail.Error) {
 	if instance.isNull() {
 		return nil, fail.InvalidInstanceError()
@@ -112,6 +113,13 @@ func (instance *cache) Entry(key string) (*Entry, fail.Error) {
 				return nil, fail.NotFoundError("failed to find entry with key '%s' in %s cache", key, instance.GetName())
 			case <-reservation.committed():
 				// acknowledge commit, and continue
+			case <-time.After(2 * temporal.GetDefaultDelay()):
+				// reservation expired, clean up
+				xerr := instance.reservationExpired(key)
+				if xerr != nil {
+					return nil, xerr
+				}
+				return nil, fail.TimeoutError(nil, 2*temporal.GetDefaultDelay(), "reservation for entry with key '%s' in %s cache has expired", key, instance.GetName())
 			}
 		}
 	}
@@ -124,8 +132,14 @@ func (instance *cache) Entry(key string) (*Entry, fail.Error) {
 	return nil, fail.NotFoundError("failed to find entry with key '%s' in %s cache", key, instance.GetName())
 }
 
+func (instance *cache) reservationExpired(key string) fail.Error {
+	instance.lock.RUnlock()
+	defer instance.lock.RLock()
+	return instance.Free(key)
+}
+
 /*
-ReserveEntry locks an entry identified by key for update
+Reserve locks an entry identified by key for update
 
 Returns:
 	nil: reservation succeeded
@@ -162,7 +176,7 @@ func (instance *cache) unsafeReserveEntry(key string) (xerr fail.Error) {
 }
 
 /*
-CommitEntry fills a previously reserved entry with content
+Commit fills a previously reserved entry with content
 The key retained at the end in the cache may be different to the one passed in parameter (and used previously in ReserveEntry()), because content.ID() has to be the final key.
 
 Returns:
@@ -184,7 +198,16 @@ func (instance *cache) Commit(key string, content Cacheable) (ce *Entry, xerr fa
 	instance.lock.Lock()
 	defer instance.lock.Unlock()
 
-	return instance.unsafeCommitEntry(key, content)
+	en, err := instance.unsafeCommitEntry(key, content)
+	if err != nil {
+		switch err.(type) {
+		case *fail.ErrInvalidParameter:
+			return nil, fail.NotFoundError("invalid keys cannot be committed")
+		default:
+			return en, err
+		}
+	}
+	return en, nil
 }
 
 // unsafeCommitEntry is the workforce of CommitEntry, without locking
