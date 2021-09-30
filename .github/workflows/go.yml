@@ -26,6 +26,10 @@ jobs:
         sudo chmod a+xr /opt/protoc/bin/protoc
         sudo ln -s /opt/protoc/bin/protoc /usr/local/bin/
     - run: make with-coverage allci
+    - uses: actions/upload-artifact@v2
+      if: failure()
+      with:
+        path: test_results.log
     - name: SonarCloud Scan
       uses: sonarsource/sonarcloud-github-action@master
       env:
