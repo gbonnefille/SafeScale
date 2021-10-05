@@ -7,16 +7,13 @@ on:
 
 jobs:
 
-  release:
+  build-linux:
 
     runs-on: ubuntu-latest
 
     steps:
     
     - uses: actions/checkout@v2
-
-    - id: get_version
-      uses: battila7/get-version-action@v2
 
     - uses: actions/setup-go@v2
       with:
@@ -37,6 +34,60 @@ jobs:
       run: make release VERSION=${{ steps.get_version.outputs.version-without-v }}
       env:
         VERSION: ${{ steps.get_version.outputs.version-without-v }}
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: distribution
+        path: safescale-${{ steps.get_version.outputs.version }}*
+
+  build-macos:
+
+    runs-on: macos-latest
+
+    steps:
+    
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.16.5' # The Go version to download (if necessary) and use.
+
+    - name: Install Protoc
+      run: |
+        brew update
+        brew install protoc-gen-go
+
+    - name: Make Release
+      run: make release VERSION=${{ steps.get_version.outputs.version-without-v }}
+      env:
+        VERSION: ${{ steps.get_version.outputs.version-without-v }}
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: distribution
+        path: safescale-${{ steps.get_version.outputs.version }}*
+
+  release:
+    needs:
+    - build-linux
+    - build-macos
+
+    runs-on: ubuntu-latest
+
+    steps:
+    
+    - uses: actions/checkout@v2
+
+    - name: Download Artifact
+      uses: actions/download-artifact@v2
+      with:
+        name: archives
+        path: .
+
+    - id: get_version
+      uses: battila7/get-version-action@v2
 
     - name: Publish Release
       uses: softprops/action-gh-release@v1
